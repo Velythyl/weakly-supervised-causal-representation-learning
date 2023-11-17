@@ -71,7 +71,7 @@ mkdir --parents $CRLDATA
 
 Clone the repository:
 ```
-git clone git@github.com:Qualcomm-AI-research/weakly-supervised-causal-representation-learning.git $CRLREPO
+git clone https://github.com/Velythyl/weakly-supervised-causal-representation-learning $CRLREPO
 cd $CRLREPO
 ```
 
