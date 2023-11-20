@@ -1,7 +1,9 @@
 """
 Create the Interventional Pong dataset including rendering.
 """
-
+import warnings
+import matplotlib
+warnings.simplefilter("ignore") # fixme jank
 import numpy as np
 import matplotlib.pyplot as plt
 import os
@@ -405,17 +407,21 @@ def write_digit(x, y, digit, color, ax):
         ax.add_patch(rec)
 
 
-def create_seq_dataset(num_samples, folder):
+def create_seq_dataset(num_samples, folder, score_delay=0):
     """
     Generate a dataset consisting of a single sequence with num_samples data points.
     Does not include the rendering with matplotlib.
+
+    score_delay: adds a delay to updating the score. score_delay+1 <= Markov Length (groundtruth)
     """
     os.makedirs(folder, exist_ok=True)
 
     settings = create_settings()
     start_point = sample_random_point(settings)
     start_point, _ = next_step(start_point, settings)
-    key_list = sorted(list(start_point.keys()))
+    key_list = list(sorted(list(start_point.keys())))
+
+
     all_steps = np.zeros((num_samples, len(key_list)), dtype=np.float32)
     all_interventions = np.zeros((num_samples - 1, len(key_list)), dtype=np.float32)
     next_time_step = start_point
@@ -425,6 +431,17 @@ def create_seq_dataset(num_samples, folder):
             all_steps[n, i] = next_time_step[key]
             if n > 0:
                 all_interventions[n - 1, i] = intv_targets[key]
+
+    assert score_delay >= 0
+    if score_delay > 0:
+        assert "score" in key_list
+        score_index = key_list.index("score")
+
+        scores = all_steps[:,score_index]
+        scores = np.roll(scores, score_delay)
+        scores[:score_delay] = all_steps[0,score_index] # bc of roll, now the 0:delay indices are the last indices.
+        # that's faulty. Instead, set it to the start_point's score.
+        all_steps[:,score_index] = scores
 
     np.savez_compressed(os.path.join(folder, 'latents.npz'),
                         latents=all_steps,
@@ -537,6 +554,7 @@ def export_figures(folder, start_index=0, end_index=-1):
     np.savez_compressed(output_filename,
                         imgs=figures)
 
+from tqdm.contrib.concurrent import process_map
 
 def generate_full_dataset(dataset_size, folder, split_name=None, num_processes=8, independent=False, triplets=False,
                           start_data=None):
@@ -561,6 +579,7 @@ def generate_full_dataset(dataset_size, folder, split_name=None, num_processes=8
             if i == num_processes - 1:
                 end_index = -1
             inp_args.append((folder, start_index, end_index))
+        #r = process_map(export_figures, inp_args, max_workers=num_processes)    # this is pretty fucking useless as a tqdm statement, bc it counts the workers themselves as the iteritems, but honestly whatever i guess i'll just suffer, and now you just suffered too because you had to scroll alllllll the way right for this dumb comment ;)
         with Pool(num_processes) as p:
             p.map(export_figures, inp_args)
         # Merge datasets
