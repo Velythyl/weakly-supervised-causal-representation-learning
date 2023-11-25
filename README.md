@@ -2,6 +2,45 @@
 
 ## Installation
 
+### Pre-installation if you're a loser
+
+Basically follow instructions on the [Mila docs](https://docs.mila.quebec/Userguide.html#Mamba) (search for Mamba).
+Copy pasted here because I'm nice.
+
+
+When installing new packages with conda install, conda uses a built-in dependency solver for solving the dependency graph of all packages (and their versions) requested such that package dependency conflicts are avoided.
+
+In some cases, especially when there are many packages already installed in a conda environment, conda’s built-in dependency solver can struggle to solve the dependency graph, taking several to tens of minutes, and sometimes never solving. In these cases, it is recommended to try libmamba.
+
+To install and set the libmamba solver, run the following commands:
+
+```bash
+# Install miniconda
+# (you can not use the preinstalled anaconda/miniconda as installing libmamba
+#  requires ownership over the anaconda/miniconda install directory)
+wget https://repo.anaconda.com/miniconda/Miniconda3-py310_22.11.1-1-Linux-x86_64.sh
+bash Miniconda3-py310_22.11.1-1-Linux-x86_64.sh
+
+# Install libmamba
+conda install -n base conda-libmamba-solver
+```
+
+By default, conda uses the built-in solver when installing packages, even after installing other solvers. To try `libmamba` once, add `--solver=libmamba` in your `conda install` command. For example:
+
+```bash
+conda install tensorflow --solver=libmamba
+```
+
+You can set libmamba as the default solver by adding solver: libmamba to your .condarc configuration file located under your `$HOME` directory. You can create it if it doesn’t exist. You can also run:
+
+```bash
+conda config --set solver libmamba
+```
+
+
+### Environment setup
+
+
 1. I used conda, glhf
 
 ```bash
