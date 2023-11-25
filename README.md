@@ -1,3 +1,21 @@
+# PGM Group Project Extension
+
+## Installation
+
+1. I used conda, glhf
+
+```bash
+conda env create --file env.yaml
+```
+
+2. Activate it
+
+```bash
+conda actvate weakly-supervised-causal
+```
+
+---
+
 # Weakly supervised causal representation learning
 
 This repository contains the code for the paper [**Weakly supervised causal representation learning**](https://arxiv.org/abs/2203.16437) by Johann Brehmer, Pim de Haan, Phillip Lippe, and Taco Cohen, published at NeurIPS 2022.
