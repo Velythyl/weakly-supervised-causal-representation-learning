@@ -4,6 +4,7 @@
 import nflows.transforms
 import nflows.utils
 import torch
+from nflows.nn.nets import ResidualNet
 from torch import nn
 
 from ws_crl.nets import make_mlp
@@ -42,10 +43,9 @@ def make_scalar_transform(
     tail_bound=10.0,
 ):
     """Utility function that constructs an invertible transformation for unstructured data"""
-
     def transform_net_factory_fn(in_features, out_features):
         # noinspection PyUnresolvedReferences
-        return nflows.nn.nets.ResidualNet(
+        return ResidualNet(
             in_features=in_features,
             out_features=out_features,
             hidden_features=hidden,
