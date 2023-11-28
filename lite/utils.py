@@ -1,7 +1,8 @@
 import nflows
+from nflows.transforms import Transform
 
 
-class ConditionalAffineScalarTransform(nflows.transforms.Transform):
+class ConditionalAffineScalarTransform(Transform):
 
     def __init__(self, param_net):
       self.param_net = param_net
