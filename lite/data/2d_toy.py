@@ -65,52 +65,39 @@ if __name__ == "__main__":
 
     # To access a single sample
     sample = dataset[0]
-
     import matplotlib.pyplot as plt
-    import numpy as np
-    latents = dataset.latents
-    obs = dataset.observations
-    print(dataset.observations)
 
-    plot_lat = latents.reshape(len(dataset) * 2, 2)
-    plt.scatter(plot_lat[:,0], plot_lat[:,1])
-    plt.show()
+    def do_plot(data, interventions):
+        def plot_many_arrows(pairs, color):
+            # pairs is of shape [n arrows, 2, (x,y)]
 
-    plot_lat = obs.reshape(len(dataset) * 2, 2)
-    plt.scatter(plot_lat[:,0], plot_lat[:,1])
-    plt.show()
+            base_x = pairs[:, 0, 0]
+            base_y = pairs[:, 0, 1]
 
-    def plot_many_arrows(pairs, color):
-        # pairs is of shape [n arrows, 2, (x,y)]
+            end_x = pairs[:, 1, 0]
+            end_y = pairs[:, 1, 1]
+            dx = end_x - base_x
+            dy = end_y - base_y
+            for i in range(base_x.shape[0]):
+                plt.arrow(base_x[i], base_y[i], dx[i], dy[i], color=color)
 
-        base_x = pairs[:,0,0]
-        base_y = pairs[:,0,1]
+        plot_data = data.reshape(len(dataset) * 2, 2)
+        # how many intervs to push??????
+        plt.scatter(plot_data[:, 0], plot_data[:, 1])
+        NUM_INTERVS_OF_EACH_TYPE_TO_PLOT = 2
+        for i in interventions.unique():
+            if i == 0:
+                continue
 
-        end_x = pairs[:,1,0]
-        end_y = pairs[:,1,1]
-        dx = end_x - base_x
-        dy = end_y - base_y
-        for i in range(base_x.shape[0]):
-            plt.arrow(base_x[i], base_y[i], dx[i], dy[i], color=color)
+            # opt to select the first elements. doesn't change anything anyway.
+            selected_intervs = torch.argsort(interventions == i, descending=True)
+            selected_intervs = selected_intervs[:NUM_INTERVS_OF_EACH_TYPE_TO_PLOT]
 
+            sel_latents = data[selected_intervs]
 
-    # how many intervs to push??????
-    plot_lat = dataset.latents.reshape(len(dataset) * 2, 2)
-    plt.scatter(plot_lat[:, 0], plot_lat[:, 1])
-    NUM_INTERVS_OF_EACH_TYPE_TO_PUSH = 2
-    for i in range(1,dataset.num_interv_types):
-        # opt to select the first elements. Doesn't change anything anyway.
-        selected_intervs = torch.argsort(dataset.interventions == i, descending=True)
-        selected_intervs = selected_intervs[:NUM_INTERVS_OF_EACH_TYPE_TO_PUSH]
+            plot_many_arrows(sel_latents, color="blue" if i == 2 else "red")
+        plt.show()
 
-        sel_latents = latents[selected_intervs]
-        sel_obs = obs[selected_intervs]
-
-        plot_many_arrows(sel_latents, color="blue" if i == 2 else "red")
-    plt.show()
-
-
-
+    do_plot(dataset.latents, dataset.interventions)
+    do_plot(dataset.observations, dataset.interventions)
     exit()
-
-    print(sample)
