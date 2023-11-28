@@ -68,28 +68,30 @@ class ILCMDecoder(nn.Module):
         self.solution_fns = [ConditionalAffineScalarTransform(nn.Sequential(nn.Linear(dim_z, 3), nn.ReLU(), nn.Linear(3, dim_z))) for _ in range(dim_z)]
 
     @staticmethod
-    def parents(inputs, idx, adjacency_matrix):
-        mask = adjacency_matrix[idx]
-        mask[idx] = 0
-        return inputs * mask
+    def parents(child_idx, adjacency_matrix):
+        mask = adjacency_matrix[:, child_idx].squeeze()
+        mask[child_idx] = 0
+        return mask
 
     def forward(self, e1, e2, intervention):
         log_p_e1 = Normal(0, 1).log_prob(e1)
         log_p_I = -torch.log(torch.tensor(self.dim_z + 1))
 
         i_mask = intervention[1:].bool()
+        if i_mask.any():
+            i = torch.argmax(i_mask)
+            z, logdet = self.solution_fns[i].inverse(
+                inputs=e2[:, i:i+1], 
+                context=self.parents(i, self.adjacency_matrix) * e1
+                )
+            log_p_e2 = (e1 - e2)**2
+            log_p_e2[i] = Normal(0, 1).log_prob(z) + logdet
+            log_p_e2 = log_p_e2.sum()
 
-        z, logdet = self.solution_fns[i_mask].inverse(
-            inputs=e2[i_mask], 
-            context=self.parents(e1, intervention, self.adjacency_matrix)
-            )
-        log_p_e2 = (e1 - e2)**2
-        log_p_e2[intervention] = Normal(0, 1).log_prob(z) + logdet
-        log_p_e2 = log_p_e2.sum()
+            log_p = log_p_e1 + log_p_e2 + log_p_I
 
-        log_p = log_p_e1 + log_p_e2 + log_p_I
-
-        x1_hat, x2_hat = self.noise_decoder(e1), self.noise_decoder(e2)
+            x1_hat, x2_hat = self.noise_decoder(e1), self.noise_decoder(e2)
+        
         return (x1_hat, x2_hat), log_p
 
 
