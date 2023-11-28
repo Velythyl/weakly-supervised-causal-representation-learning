@@ -1,14 +1,17 @@
 import torch
-import lightning as L
+from torch import nn
+import pytorch_lightning as L
+
+from lite.ilcm import ILCMEncoder, ILCMDecoder
 
 
 class ILCMLite(L.LightningModule):
-    def __init__(self, dim_z, encoder, decoder, beta=1.0):
+    def __init__(self, dim_z, ilcm_encoder, ilcm_decoder, beta=1.0):
         super().__init__()
         self.dim_z = dim_z
         self.beta = beta
-        self.encoder = encoder
-        self.decoder = decoder
+        self.ilcm_encoder = ilcm_encoder
+        self.ilcm_decoder = ilcm_decoder
 
     def training_step(self, batch, batch_idx):
         x1, x2 = batch
@@ -27,3 +30,43 @@ class ILCMLite(L.LightningModule):
         return optimizer
 
 
+
+if __name__ == '__main__':
+    
+    dim_z, dim_x = 2, 2 
+
+    noise_encoder = nn.Sequential(nn.Linear(dim_x, 3), nn.ReLU(), nn.Linear(3, 2))
+    intervention_encoder = nn.Sequential(nn.Linear(1, 3), nn.ReLU(), nn.Linear(3, dim_z + 1), nn.Softmax())
+    ilcm_encoder = ILCMEncoder(noise_encoder, intervention_encoder)   
+    ilcm_decoder = ILCMDecoder(dim_z)
+
+
+
+    model = ILCMLite(ilcm_encoder, ilcm_decoder)
+    
+
+    import torch
+    from torch.utils.data import Dataset, DataLoader
+
+    # Define a custom dataset
+    class CustomDataset(Dataset):
+        def __init__(self, length):
+            self.length = length
+
+        def __len__(self):
+            return self.length
+
+        def __getitem__(self, idx):
+            # Generate a random 2x2 tensor
+            tensor = torch.rand(2, 2)
+            return tensor
+    dataset = CustomDataset(5)
+    train_loader = DataLoader(dataset, batch_size=2, shuffle=True)
+
+    # for x1, x2 in train_loader:
+    #     (e1, e2, intervention), log_prob_posterior = ilcm_encoder(x1, x2)
+    #     print((e1, e2, intervention), log_prob_posterior)
+
+
+    trainer = L.Trainer()
+    trainer.fit(model, train_dataloaders=train_loader)

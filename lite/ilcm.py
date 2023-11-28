@@ -3,7 +3,7 @@ from torch import nn
 from torchvision.ops import MLP
 from torch.distributions import Normal, OneHotCategorical
 
-from utils import ConditionalAffineScalarTransform
+from lite.utils import ConditionalAffineScalarTransform
 
 
 class ILCMEncoder(nn.Module):
@@ -26,7 +26,7 @@ class ILCMEncoder(nn.Module):
         intervention_probs = self.intervention_encoder(torch.abs(e1_mean - e2_mean))
         intervention_posterior = OneHotCategorical(intervention_probs)
         
-        intervention = intervention_posterior.sample()
+        intervention = intervention_posterior.sample()[1:]
         log_q_I = intervention_posterior.log_prob(intervention)
         
         eps_mean, eps_std = e1_mean, e1_std
@@ -49,9 +49,10 @@ class ILCMEncoder(nn.Module):
 
 class ILCMDecoder(nn.Module):
 
-    def __init__(self, dim_z):
+    def __init__(self, dim_z, noise_decoder):
         super().__init__()
         self.dim_z = dim_z
+        self.noise_decoder = noise_decoder
 
         self.adjacency_matrix = nn.Parameter(torch.ones((dim_z, dim_z)), requires_grad=True)
         self.solution_fns = [ConditionalAffineScalarTransform(MLP()) for _ in range(dim_z)]
@@ -64,14 +65,14 @@ class ILCMDecoder(nn.Module):
 
     def forward(self, e1, e2, intervention):
         log_p_e1 = Normal(0, 1).log_prob(e1)
-        log_p_I = -torch.log(self.dim_z)
+        log_p_I = -torch.log(self.dim_z + 1)
 
         z, logdet = self.solution_fns[intervention].inverse(
             inputs=e2[:, intervention:intervention+1], 
             context=self.parents(e1, intervention, self.adjacency_matrix)
             )
         log_p_e2 = (e1 - e2)**2
-        log_p_e2[intervention] = self.latent_prior.log_prob(z) + logdet
+        log_p_e2[intervention] = Normal(0, 1).log_prob(z) + logdet
         log_p_e2 = log_p_e2.sum()
 
         log_p = log_p_e1 + log_p_e2 + log_p_I
