@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 from torchvision.ops import MLP
-from torch.distributions import Normal, OneHotCategorical
+from torch.distributions import Normal, OneHotCategorical, MultivariateNormal
 
 from lite.utils import ConditionalAffineScalarTransform
 
@@ -32,7 +32,6 @@ class ILCMEncoder(nn.Module):
         intervention = intervention_posterior.sample()
         log_q_I = intervention_posterior.log_prob(intervention)
 
-        # int_indices = torch.nonzero(intervention, as_tuple=True)[0]
         i_mask = intervention[1:].bool()
         
         eps_mean, eps_std = e1_mean, e1_std
@@ -41,15 +40,17 @@ class ILCMEncoder(nn.Module):
         unintervened_eps_std = self.stoch_avg(e1_std, e2_std, ~i_mask)
         eps_std = eps_std.masked_scatter(~i_mask, unintervened_eps_std)
 
-        eps_posterior = Normal(eps_mean, torch.diag(eps_std))
-        intervened_eps_posterior = Normal(e2_mean[i_mask], torch.diag(e2_std[i_mask]))
+        eps_posterior = MultivariateNormal(eps_mean, torch.diag(eps_std))
+        intervened_eps_posterior = MultivariateNormal(e2_mean[i_mask], torch.diag(e2_std[i_mask]))
         
         e1 = eps_posterior.sample()
         log_q_e1 = eps_posterior.log_prob(e1)
 
         e2 = e1
-        e2[i_mask] = intervened_eps_posterior.sample()
-        log_q_e2 = intervened_eps_posterior.log_prob(e2[i_mask])
+        log_q_e2 = 0
+        if i_mask.any():
+            e2[i_mask] = intervened_eps_posterior.sample()
+            log_q_e2 += intervened_eps_posterior.log_prob(e2[i_mask])
 
         log_q = log_q_e1 + log_q_e2 + log_q_I
 
@@ -74,10 +75,12 @@ class ILCMDecoder(nn.Module):
 
     def forward(self, e1, e2, intervention):
         log_p_e1 = Normal(0, 1).log_prob(e1)
-        log_p_I = -torch.log(self.dim_z + 1)
+        log_p_I = -torch.log(torch.tensor(self.dim_z + 1))
 
-        z, logdet = self.solution_fns[intervention].inverse(
-            inputs=e2[:, intervention:intervention+1], 
+        i_mask = intervention[1:].bool()
+
+        z, logdet = self.solution_fns[i_mask].inverse(
+            inputs=e2[i_mask], 
             context=self.parents(e1, intervention, self.adjacency_matrix)
             )
         log_p_e2 = (e1 - e2)**2
