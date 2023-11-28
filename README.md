@@ -40,7 +40,6 @@ conda config --set solver libmamba
 
 ### Environment setup
 
-
 1. I used conda, glhf
 
 ```bash
@@ -50,7 +49,13 @@ conda env create --file env.yaml
 2. Activate it
 
 ```bash
-conda actvate weakly-supervised-causal
+conda activate weakly-supervised-causal
+```
+
+3. Test it with a base command
+
+```bash
+experiments/scaling.py general.exp_name=dummy general.base_dir="./results_test/"  general.seed=42 data.dim_z=3 data.nature.seed=42 training=scaling_fast
 ```
 
 ---
