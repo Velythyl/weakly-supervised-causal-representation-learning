@@ -36,9 +36,10 @@ if __name__ == '__main__':
     dim_z, dim_x = 2, 2 
 
     noise_encoder = nn.Sequential(nn.Linear(dim_x, 3), nn.ReLU(), nn.Linear(3, 2))
+    noise_decoder = nn.Sequential(nn.Linear(2, 3), nn.ReLU(), nn.Linear(3, dim_x))
     intervention_encoder = nn.Sequential(nn.Linear(1, 3), nn.ReLU(), nn.Linear(3, dim_z + 1), nn.Softmax())
     ilcm_encoder = ILCMEncoder(noise_encoder, intervention_encoder)   
-    ilcm_decoder = ILCMDecoder(dim_z)
+    ilcm_decoder = ILCMDecoder(noise_decoder, dim_z)
 
 
 
