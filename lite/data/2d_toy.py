@@ -18,6 +18,9 @@ class ToyDataset(Dataset):
         return self.data[idx]
 
     def generate(self):
+
+
+        
         z1 = Normal(torch.tensor([0.0]), torch.tensor([1.0])).sample_n(self.num_samples)
         if random.random() < 0.5:
             z2 = Normal(0.3 * z1 ** 2 - 0.6 * z1,  + 0.3, 0.8 * torch.eye(self.num_samples)).sample()

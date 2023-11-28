@@ -50,12 +50,15 @@ conda env create --file env.yaml
 
 ```bash
 conda activate weakly-supervised-causal
+<<<<<<< HEAD
+=======
 ```
 
 3. Test it with a base command
 
 ```bash
 experiments/scaling.py general.exp_name=dummy general.base_dir="./results_test/"  general.seed=42 data.dim_z=3 data.nature.seed=42 training=scaling_fast
+>>>>>>> 6b3db32a58ee044ab05baba2b8e2a881ac6d85be
 ```
 
 ---
@@ -145,7 +148,7 @@ docker run -v "$CRLDATA:/workspace/data" --gpus all --name wscrl -it --rm wscrl:
 
 Now you can run experiments, which we will discuss in the next section in more detail. To quickly verify that the code is running, use this dummy experiment:
 ```
-experiments/scaling.py general.exp_name=dummy general.base_dir=/workspace/exp general.seed=42 data.dim_z=3 data.nature.seed=42 training=scaling_fast
+experiments/scaling.py general.exp_name=dummy general.base_dir=results_whatever general.seed=42 data.dim_z=3 data.nature.seed=42 training=scaling_fast
 ```
 You should be seeing log output from the training, including a progress bar.
 
