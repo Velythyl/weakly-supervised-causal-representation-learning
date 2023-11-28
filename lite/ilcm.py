@@ -13,34 +13,43 @@ class ILCMEncoder(nn.Module):
 
         self.noise_encoder = noise_encoder
         self.intervention_encoder = intervention_encoder
-
-    def stoch_avg(t1, t2, indices):
-        param = torch.rand(t1[indices].shape, requires_grad=False)
-        return param * t1[indices] + (1.0 - param) * t2[indices]
+    
+    @staticmethod
+    def stoch_avg(t1, t2, mask):
+        param = torch.rand(t1[mask].shape, device=t1.device, requires_grad=False)
+        return param * t1[mask] + (1.0 - param) * t2[mask]
     
     def forward(self, x1, x2):
         
-        e1_mean, e1_std = self.noise_encoder(x1)
-        e2_mean, e2_std = self.noise_encoder(x2)
+        e1_mean, e1_logstd = self.noise_encoder(x1)
+        e2_mean, e2_logstd = self.noise_encoder(x2)
+
+        e1_std, e2_std = torch.exp(e1_logstd), torch.exp(e2_logstd)
         
         intervention_probs = self.intervention_encoder(torch.abs(e1_mean - e2_mean))
         intervention_posterior = OneHotCategorical(intervention_probs)
         
-        intervention = intervention_posterior.sample()[1:]
+        intervention = intervention_posterior.sample()
         log_q_I = intervention_posterior.log_prob(intervention)
+
+        # int_indices = torch.nonzero(intervention, as_tuple=True)[0]
+        i_mask = intervention[1:].bool()
         
         eps_mean, eps_std = e1_mean, e1_std
-        eps_mean[1 - intervention] = self.stoch_avg(e1_mean, e2_mean, 1 - intervention)
-        eps_std[1 - intervention] = self.stoch_avg(e1_std, e2_std, 1 - intervention)
-        eps_posterior = Normal(eps_mean, eps_std)
-        intervened_eps_posterior = Normal(e2_mean[intervention], e2_std[intervention])
+        unintervened_eps_mean = self.stoch_avg(e1_mean, e2_mean, ~i_mask)
+        eps_mean = eps_mean.masked_scatter(~i_mask, unintervened_eps_mean)
+        unintervened_eps_std = self.stoch_avg(e1_std, e2_std, ~i_mask)
+        eps_std = eps_std.masked_scatter(~i_mask, unintervened_eps_std)
+
+        eps_posterior = Normal(eps_mean, torch.diag(eps_std))
+        intervened_eps_posterior = Normal(e2_mean[i_mask], torch.diag(e2_std[i_mask]))
         
         e1 = eps_posterior.sample()
         log_q_e1 = eps_posterior.log_prob(e1)
 
         e2 = e1
-        e2[intervention] = intervened_eps_posterior.sample()
-        log_q_e2 = intervened_eps_posterior.log_prob(e2[intervention])
+        e2[i_mask] = intervened_eps_posterior.sample()
+        log_q_e2 = intervened_eps_posterior.log_prob(e2[i_mask])
 
         log_q = log_q_e1 + log_q_e2 + log_q_I
 
@@ -49,15 +58,15 @@ class ILCMEncoder(nn.Module):
 
 class ILCMDecoder(nn.Module):
 
-    def __init__(self, dim_z, noise_decoder):
+    def __init__(self, noise_decoder, dim_z):
         super().__init__()
         self.dim_z = dim_z
         self.noise_decoder = noise_decoder
 
         self.adjacency_matrix = nn.Parameter(torch.ones((dim_z, dim_z)), requires_grad=True)
-        self.solution_fns = [ConditionalAffineScalarTransform(MLP()) for _ in range(dim_z)]
+        self.solution_fns = [ConditionalAffineScalarTransform(nn.Sequential(nn.Linear(dim_z, 3), nn.ReLU(), nn.Linear(3, dim_z))) for _ in range(dim_z)]
 
-
+    @staticmethod
     def parents(inputs, idx, adjacency_matrix):
         mask = adjacency_matrix[idx]
         mask[idx] = 0

@@ -10,8 +10,8 @@ class ILCMLite(L.LightningModule):
         super().__init__()
         self.dim_z = dim_z
         self.beta = beta
-        self.ilcm_encoder = ilcm_encoder
-        self.ilcm_decoder = ilcm_decoder
+        self.encoder = ilcm_encoder
+        self.decoder = ilcm_decoder
 
     def training_step(self, batch, batch_idx):
         x1, x2 = batch
@@ -37,15 +37,13 @@ if __name__ == '__main__':
 
     noise_encoder = nn.Sequential(nn.Linear(dim_x, 3), nn.ReLU(), nn.Linear(3, 2))
     noise_decoder = nn.Sequential(nn.Linear(2, 3), nn.ReLU(), nn.Linear(3, dim_x))
-    intervention_encoder = nn.Sequential(nn.Linear(1, 3), nn.ReLU(), nn.Linear(3, dim_z + 1), nn.Softmax())
+    intervention_encoder = nn.Sequential(nn.Linear(dim_z, 3), nn.ReLU(), nn.Linear(3, dim_z + 1), nn.Softmax())
     ilcm_encoder = ILCMEncoder(noise_encoder, intervention_encoder)   
     ilcm_decoder = ILCMDecoder(noise_decoder, dim_z)
 
 
-
-    model = ILCMLite(ilcm_encoder, ilcm_decoder)
+    model = ILCMLite(dim_z, ilcm_encoder, ilcm_decoder)
     
-
     import torch
     from torch.utils.data import Dataset, DataLoader
 
@@ -67,7 +65,6 @@ if __name__ == '__main__':
     # for x1, x2 in train_loader:
     #     (e1, e2, intervention), log_prob_posterior = ilcm_encoder(x1, x2)
     #     print((e1, e2, intervention), log_prob_posterior)
-
 
     trainer = L.Trainer()
     trainer.fit(model, train_dataloaders=train_loader)
