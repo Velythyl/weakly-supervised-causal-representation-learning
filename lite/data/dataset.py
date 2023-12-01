@@ -11,7 +11,6 @@ from repo.ws_crl.transforms import make_scalar_transform
 class WSCRLDataset(Dataset):
     def __init__(self, num_samples):
         self.num_samples = num_samples
-        self.transform = make_scalar_transform(n_features=2, layers=5)    #ConditionalAffineScalarTransform()
 
         self.latents, self.observations, self.interventions, self.data = self.generate()
 

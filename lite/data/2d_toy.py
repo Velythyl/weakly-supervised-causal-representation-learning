@@ -10,8 +10,8 @@ from repo.ws_crl.transforms import make_scalar_transform
 
 class Toy2DDataset(WSCRLDataset):
     def __init__(self, num_samples):
-        super().__init__(num_samples)
         self.transform = make_scalar_transform(n_features=2, layers=5)    #ConditionalAffineScalarTransform()
+        super().__init__(num_samples)
 
     def generate(self):
         z1 = Normal(0.0, 1.0).sample_n(self.num_samples).squeeze()

@@ -1,6 +1,7 @@
 import torch
 from torch.distributions import Normal
 from repo.lite.data.dataset import WSCRLDataset
+from repo.lite.utils import AffineTransformZ2x
 
 from repo.ws_crl.transforms import make_scalar_transform
 
@@ -38,8 +39,9 @@ class ToyNDDataset(WSCRLDataset):
         self.adj_mat = torch.from_numpy(adj_mat)
         self.num_nodes = adj_mat.shape[0]
         assert self.num_nodes == dim
-        self.transform = make_scalar_transform(n_features=2, layers=5)    #ConditionalAffineScalarTransform()
+        self.transform = AffineTransformZ2x(dim=dim)    #ConditionalAffineScalarTransform()
         super().__init__(num_samples)
+        #self.transform = make_scalar_transform(n_features=self.num_nodes, layers=5)    #ConditionalAffineScalarTransform()
 
     def children(self, id):
         row = self.adj_mat[id].squeeze()
@@ -135,11 +137,10 @@ class ToyNDDataset(WSCRLDataset):
 
                 z_i_s[i,1,node] = base_dist(node_id=node, prevs=prevs, z_i_s_slice=z_i_s[i,1][None])
 
-        in_latents = z_i_s.reshape(self.num_samples * 2, self.num_nodes)
-        observations, idk_wtf_this_is = self.transform.forward(in_latents)
-        ret = observations.reshape(self.num_samples, 2, self.num_nodes).detach()
+        #ret = self.transform.forward(z_i_s.reshape(self.num_samples * 2, self.num_nodes)).reshape(self.num_samples, 2 ,self.num_nodes)
+        ret = z_i_s * 2 + 5 # small transform
 
-        return z_i_s, ret, interventions, ret
+        return z_i_s.detach(), ret.detach(), interventions.detach(), ret.detach()
 
 if __name__ == "__main__":
     import networkx as nx
@@ -148,35 +149,43 @@ if __name__ == "__main__":
     G = nx.DiGraph()
 
     # Add edges to the graph based on the structure you provided
-    edges = [('A', 'B'), ('B', 'C'), ('C', 'D'), ('A', 'C'), ('B', 'D')]
+    edges = [('A', 'B'), ('B', 'C'), ('A', 'C')]
     G.add_edges_from(edges)
     adj_matrix = nx.adjacency_matrix(G)
     # Convert the adjacency matrix to a NumPy array (if needed)
     adj_array = adj_matrix.toarray()
 
-    dataset = ToyNDDataset(1000, adj_array, 4)
+    dataset = ToyNDDataset(100, adj_array, 3)
+
 
     # To access a single sample
     sample = dataset[0]
     import matplotlib.pyplot as plt
 
     def do_plot(data, interventions):
+        fig = plt.figure(figsize=(12, 12))
+        ax = fig.add_subplot(projection='3d')
+
         def plot_many_arrows(pairs, color):
             # pairs is of shape [n arrows, 2, (x,y)]
 
             base_x = pairs[:, 0, 0]
             base_y = pairs[:, 0, 1]
+            base_z = pairs[:, 0, 2]
 
             end_x = pairs[:, 1, 0]
             end_y = pairs[:, 1, 1]
+            end_z = pairs[:, 1, 2]
             dx = end_x - base_x
             dy = end_y - base_y
-            for i in range(base_x.shape[0]):
-                plt.arrow(base_x[i], base_y[i], dx[i], dy[i], color=color)
+            dz = end_z - base_z
 
-        plot_data = data.reshape(len(dataset) * 2, 2)
+            for i in range(base_x.shape[0]):
+                ax.plot([base_x[i], end_x[i]], [base_y[i], end_y[i]], [base_z[i], end_z[i]], color=color)
+
+        plot_data = data.reshape(len(dataset) * 2, 3)
         # how many intervs to push??????
-        plt.scatter(plot_data[:, 0], plot_data[:, 1])
+        ax.scatter(plot_data[:, 0], plot_data[:, 1], plot_data[:,2])
         NUM_INTERVS_OF_EACH_TYPE_TO_PLOT = 2
         for i in interventions.unique():
             if i == 0:
@@ -188,7 +197,13 @@ if __name__ == "__main__":
 
             sel_latents = data[selected_intervs]
 
-            plot_many_arrows(sel_latents, color="blue" if i == 2 else "red")
+            color = {
+                1: "red",
+                2: "blue",
+                3: "green",
+                0: None
+            }
+            plot_many_arrows(sel_latents, color=color[i.int().item()])
         plt.show()
 
     do_plot(dataset.latents, dataset.interventions)
