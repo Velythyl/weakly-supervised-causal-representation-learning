@@ -1,4 +1,7 @@
 results*/
+slurm-*.out
+Miniconda*
+lightning_logs/
 
 # PyCharm
 .idea
