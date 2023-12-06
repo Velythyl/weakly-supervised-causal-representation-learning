@@ -1,3 +1,5 @@
+import functools
+
 import torch
 from torch.distributions import Normal
 from repo.lite.data.dataset import WSCRLDataset
@@ -34,21 +36,51 @@ def check_symmetric(a, rtol=1e-05, atol=1e-08):
     return torch.allclose(a, a.T, rtol=rtol, atol=atol)
 
 
-class ToyNDDataset(WSCRLDataset):
-    def __init__(self, num_samples, G, dim):
+class Toy_ND_NM_Dataset(WSCRLDataset):
+    def __init__(self, num_samples, G):
         adj_mat = nx.adjacency_matrix(G)
         # Convert the adjacency matrix to a NumPy array (if needed)
         adj_mat = adj_mat.toarray()
         self.adj_mat = torch.from_numpy(adj_mat)
+        self.num_nodes = self.adj_mat.shape[0]
 
         nodes = list(G.nodes())
 
         # Create a mapping between node labels and indices in the adjacency matrix
-        node_to_index = {node: index for index, node in enumerate(nodes)}
+        self.node_to_index = {node: index for index, node in enumerate(nodes)}
+        self.index_to_node = {index: node for index, node in enumerate(nodes)}
 
+        self.frozen_nodes = [node for node in nodes if ("_t" in node)]
+        self.liquid_nodes = [node for node in nodes if ("_t" not in node)]
 
-        self.num_nodes = adj_mat.shape[0]
-        assert self.num_nodes == dim
+        if len(self.frozen_nodes) > 0:
+            previous_timesteps = set()
+            for node in self.frozen_nodes:
+                count = int(node.split("_t")[-1])
+                previous_timesteps.add(count)
+            max_previous = max(previous_timesteps)
+            assertion = set()
+            for i in range(max_previous):
+                assertion.add(i+1)
+            assert assertion == previous_timesteps
+            self.markov_length = max_previous
+
+        strata = [self.self.liquid_nodes]
+        if len(self.frozen_nodes) > 0:
+            for strate in previous_timesteps:
+                strata.append(list(filter(lambda x: f"_t{strate}", self.frozen_nodes)))
+            strata = list(reversed(strata))
+
+        def backprop(data):
+            # data is (num_samples, num_nodes)
+            for i in range(1,len(strata)):
+                past, future = strata[i-1], strata[i]
+
+                for j in range(len(past)):
+                    assert past[j].split("_t")[0] == future[j].split("_t")[0]
+                    data[self.node_to_index[past[j]]] = self.node_to_index[future[j]]
+        self.backprop = backprop
+
         #self.transform = AffineTransformZ2x(dim=dim)    #ConditionalAffineScalarTransform()
         super().__init__(num_samples)
         #self.transform = make_scalar_transform(n_features=self.num_nodes, layers=5)    #ConditionalAffineScalarTransform()
@@ -58,9 +90,10 @@ class ToyNDDataset(WSCRLDataset):
 
         return row.nonzero()
 
+    @functools.lru_cache
     def parents(self, id):
-        col = self.adj_mat[:,id].squeeze()
-        return col.nonzero()
+        col = self.adj_mat[:,id].squeeze().nonzero()
+        return col.nonzero(), self.markov_distance(id, col)
 
     def execution_order(self):
         assert not check_symmetric(self.adj_mat)
@@ -80,7 +113,7 @@ class ToyNDDataset(WSCRLDataset):
                     if child in execution_order or child in add_to_order:
                         continue
 
-                    childs_parents = self.parents(child)
+                    childs_parents, _ = self.parents(child)
 
                     all_in_execution_order = True
                     for childs_parent in childs_parents:
@@ -100,32 +133,60 @@ class ToyNDDataset(WSCRLDataset):
             dico[node2] = i
 
         return dico
-    def generate(self):
 
-        def base_dist(node_id, prevs, z_i_s_slice):
+    def markov_distance(self, node1, node2_arr):
+        def get_number(x):
+            origin = self.index_to_node[x]
+            origin = origin.split("_t")
+            if len(origin) == 0:
+                origin = 0
+            else:
+                origin = int(origin[-1])
+            return origin
+
+        x = get_number(node1)
+        y = torch.tensor([get_number(n) for n in node2_arr], dtype=torch.int)
+        ret = y - x
+
+        assert (ret >= 0).all()
+        return ret
+
+    def generate(self):
+        execution_order = self.execution_order()
+
+        z_i_s = torch.zeros((self.num_samples, self.markov_length+1, self.num_nodes))
+
+        def base_dist(node_id, prevs, prev_distances, z_i_s_slice):
             # z_i_s_slice: [num_samples, num_nodes]
 
             if len(prevs) == 0:
-                ret = Normal(0.0 + node_id, 1.0).sample_n(z_i_s_slice.shape[0]).squeeze() # THIS IS COMPLETELY ARBITRARY
+                ret = Normal(0.0 + node_id, 1.0).sample_n(z_i_s_slice.shape[0]).squeeze()
                 return ret
 
             assert not (z_i_s_slice[:,prevs] == 0).any()  # this basically says "the node's parents must have been filled before calling base_dist
 
-            prev_mus = prevs.squeeze()
+            prevs = prevs.squeeze()
+            prev_mus = prevs[prev_distances == 0]   # same timestep
+            prev_markovs = prevs[prev_distances != 0]   # same timestep
 
             mu = z_i_s_slice[:,prev_mus]
             if len(mu.shape) == 2:
                 mu = torch.sum(mu, dim=1)
             mu += node_id/self.num_nodes * torch.ones((z_i_s_slice.shape[0],))
 
-            ret = Normal(mu, 0.8 ** 2).sample_n(1).squeeze() # THIS IS COMPLETELY ARBITRARY
+            ret = Normal(mu, 0.8 ** 2).sample_n(1).squeeze()
+
+            z_i_s_slice[:,prev_markovs]
+
+
             return ret
+        
+        for node in self.liquid_nodes:
 
-        execution_order = self.execution_order()
 
-        z_i_s = torch.zeros((self.num_samples, 2, self.num_nodes))
         for node in execution_order:
-            z_i_s[:,0,node] = base_dist(node_id=node, prevs=self.parents(node), z_i_s_slice=z_i_s[:,0])
+            parents, distances = self.parents(node)
+            z_i_s[:,0,node] = base_dist(node_id=node, prevs=parents, prev_distances=distances, z_i_s_slice=z_i_s[:,0])
 
         z_i_s[:, 1, :] = torch.clone(z_i_s[:, 0, :])
 
@@ -162,7 +223,7 @@ if __name__ == "__main__":
     edges = [('A', 'B'), ('B', 'C'), ('A', 'C')]
     G.add_edges_from(edges)
 
-    dataset = ToyNDDataset(100, G, 3)
+    dataset = Toy_ND_NM_Dataset(100, G)
 
 
     # To access a single sample
