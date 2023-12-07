@@ -19,6 +19,17 @@ class ConditionalAffineScalarTransform(Transform):
         outputs = (inputs - shift) / scale
         return outputs, -logabsdet
 
+<<<<<<< HEAD:.lite/utils.py
+# class ParamsNet(nn.Module):
+
+def affine_transform(dim):
+    mlps = []
+    for di in range(dim):
+        mlps.append(
+            nn.Sequential(
+                nn.Linear
+            )
+=======
 class AffineTransformZ2x(nn.Module):
     def __init__(self, dim):
         super().__init__()
@@ -35,6 +46,7 @@ class AffineTransformZ2x(nn.Module):
             nn.Linear(dim, dim),
             nn.ReLU(),
             nn.Linear(dim, 2),
+>>>>>>> fa5a3e4857b1d37c078f94985b58efe9fd2d438f:lite/utils.py
         )
 
         self.nets = [get_net() for _ in range(dim)]

@@ -41,7 +41,7 @@ tests_cluster/logs
 *.jpg
 
 # Hidden files
-.*
+# .*
 !.gitignore
 
 # Outdated files
