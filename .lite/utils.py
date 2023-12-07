@@ -19,7 +19,7 @@ class ConditionalAffineScalarTransform(Transform):
         outputs = (inputs - shift) / scale
         return outputs, -logabsdet
 
-class ParamsNet(nn.Module):
+# class ParamsNet(nn.Module):
 
 def affine_transform(dim):
     mlps = []
