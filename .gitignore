@@ -1,3 +1,8 @@
+results*/
+slurm-*.out
+Miniconda*
+lightning_logs/
+
 # PyCharm
 .idea
 
@@ -36,7 +41,7 @@ tests_cluster/logs
 *.jpg
 
 # Hidden files
-.*
+# .*
 !.gitignore
 
 # Outdated files

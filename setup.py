@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 setup(
     name="ws_crl",
     version="1.0.0",
-    packages=find_packages(include=["ws_crl*", "experiments"]),
+    packages=find_packages(include=["ws_crl*", "experiments", "ws_crl_lite"]),
     scripts=[
         "experiments/causalcircuit_reduce_dim.py",
         "experiments/scaling.py",

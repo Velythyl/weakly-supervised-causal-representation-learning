@@ -1,3 +1,68 @@
+# PGM Group Project Extension
+
+## Installation
+
+### Pre-installation if you're a loser
+
+Basically follow instructions on the [Mila docs](https://docs.mila.quebec/Userguide.html#Mamba) (search for Mamba).
+Copy pasted here because I'm nice.
+
+
+When installing new packages with conda install, conda uses a built-in dependency solver for solving the dependency graph of all packages (and their versions) requested such that package dependency conflicts are avoided.
+
+In some cases, especially when there are many packages already installed in a conda environment, conda’s built-in dependency solver can struggle to solve the dependency graph, taking several to tens of minutes, and sometimes never solving. In these cases, it is recommended to try libmamba.
+
+To install and set the libmamba solver, run the following commands:
+
+```bash
+# Install miniconda
+# (you can not use the preinstalled anaconda/miniconda as installing libmamba
+#  requires ownership over the anaconda/miniconda install directory)
+wget https://repo.anaconda.com/miniconda/Miniconda3-py310_22.11.1-1-Linux-x86_64.sh
+bash Miniconda3-py310_22.11.1-1-Linux-x86_64.sh
+
+# Install libmamba
+conda install -n base conda-libmamba-solver
+```
+
+By default, conda uses the built-in solver when installing packages, even after installing other solvers. To try `libmamba` once, add `--solver=libmamba` in your `conda install` command. For example:
+
+```bash
+conda install tensorflow --solver=libmamba
+```
+
+You can set libmamba as the default solver by adding solver: libmamba to your .condarc configuration file located under your `$HOME` directory. You can create it if it doesn’t exist. You can also run:
+
+```bash
+conda config --set solver libmamba
+```
+
+
+### Environment setup
+
+1. I used conda, glhf
+
+```bash
+conda env create --file env.yaml
+```
+
+2. Activate it
+
+```bash
+conda activate weakly-supervised-causal
+<<<<<<< HEAD
+=======
+```
+
+3. Test it with a base command
+
+```bash
+experiments/scaling.py general.exp_name=dummy general.base_dir="./results_test/"  general.seed=42 data.dim_z=3 data.nature.seed=42 training=scaling_fast
+>>>>>>> 6b3db32a58ee044ab05baba2b8e2a881ac6d85be
+```
+
+---
+
 # Weakly supervised causal representation learning
 
 This repository contains the code for the paper [**Weakly supervised causal representation learning**](https://arxiv.org/abs/2203.16437) by Johann Brehmer, Pim de Haan, Phillip Lippe, and Taco Cohen, published at NeurIPS 2022.
@@ -83,7 +148,7 @@ docker run -v "$CRLDATA:/workspace/data" --gpus all --name wscrl -it --rm wscrl:
 
 Now you can run experiments, which we will discuss in the next section in more detail. To quickly verify that the code is running, use this dummy experiment:
 ```
-experiments/scaling.py general.exp_name=dummy general.base_dir=/workspace/exp general.seed=42 data.dim_z=3 data.nature.seed=42 training=scaling_fast
+experiments/scaling.py general.exp_name=dummy general.base_dir=results_whatever general.seed=42 data.dim_z=3 data.nature.seed=42 training=scaling_fast
 ```
 You should be seeing log output from the training, including a progress bar.
 
