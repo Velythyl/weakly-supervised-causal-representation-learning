@@ -183,6 +183,7 @@ class ToyNDDataset(WSCRLDataset):
 
             # shortcut
             skip_to = dict_node2execution[interv[0]]    # first node in execution (others MUST be bigger)
+            # todo this skip logic is broken
 
             #interv_names = self.resolve_interv(interv)
 
