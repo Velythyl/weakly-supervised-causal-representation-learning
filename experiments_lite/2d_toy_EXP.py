@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import pytorch_lightning as L
 
-from lite.ilcm import ILCMEncoder, ILCMDecoder
+from ws_crl_lite.models.ilcm import ILCMEncoder, ILCMDecoder
 
 
 class ILCMLite(L.LightningModule):
@@ -14,7 +14,9 @@ class ILCMLite(L.LightningModule):
         self.decoder = ilcm_decoder
 
     def training_step(self, batch, batch_idx):
-        x1, x2 = batch
+        batch_sz, seq_len, dim_z = batch.shape
+        #TODO: make it work for sequences of longer than 2
+        x1, x2 = batch[:, 0], batch[:, 1]
         (e1, e2, intervention), log_prob_posterior = self.encoder(x1, x2)
         (x1_hat, x2_hat), log_prob_prior = self.decoder(e1, e2, intervention)
         
@@ -33,10 +35,10 @@ class ILCMLite(L.LightningModule):
 
 if __name__ == '__main__':
     
-    dim_z, dim_x = 2, 2 
+    seq_len, dim_z, dim_x = 2, 4, 6 
 
-    noise_encoder = nn.Sequential(nn.Linear(dim_x, 3), nn.ReLU(), nn.Linear(3, 2))
-    noise_decoder = nn.Sequential(nn.Linear(2, 3), nn.ReLU(), nn.Linear(3, dim_x))
+    noise_encoder = nn.Sequential(nn.Linear(dim_x, 3), nn.ReLU(), nn.Linear(3, dim_z * 2))
+    noise_decoder = nn.Sequential(nn.Linear(dim_z, 3), nn.ReLU(), nn.Linear(3, dim_x))
     intervention_encoder = nn.Sequential(nn.Linear(dim_z, 3), nn.ReLU(), nn.Linear(3, dim_z + 1), nn.Softmax())
     ilcm_encoder = ILCMEncoder(noise_encoder, intervention_encoder)   
     ilcm_decoder = ILCMDecoder(noise_decoder, dim_z)
@@ -56,15 +58,10 @@ if __name__ == '__main__':
             return self.length
 
         def __getitem__(self, idx):
-            # Generate a random 2x2 tensor
-            tensor = torch.rand(2, 2)
+            tensor = torch.rand(seq_len, dim_x)
             return tensor
+
     dataset = CustomDataset(5)
-    train_loader = DataLoader(dataset, batch_size=2, shuffle=True)
-
-    # for x1, x2 in train_loader:
-    #     (e1, e2, intervention), log_prob_posterior = ilcm_encoder(x1, x2)
-    #     print((e1, e2, intervention), log_prob_posterior)
-
+    train_loader = DataLoader(dataset, batch_size=3, shuffle=True)
     trainer = L.Trainer()
     trainer.fit(model, train_dataloaders=train_loader)
