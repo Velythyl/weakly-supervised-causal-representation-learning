@@ -1,5 +1,7 @@
 import torch
 from torch import nn
+from torch.utils.data import Dataset, DataLoader
+
 import pytorch_lightning as L
 
 from ws_crl_lite.models.ilcm import ILCMEncoder, ILCMDecoder
@@ -35,6 +37,8 @@ if __name__ == "__main__":
 
     noise_encoder = nn.Sequential(nn.Linear(dim_x, 3), nn.ReLU(), nn.Linear(3, 2))
     noise_decoder = nn.Sequential(nn.Linear(2, 3), nn.ReLU(), nn.Linear(3, dim_x))
+
+    # in their code, the intervention encoder is a quadratic?
     intervention_encoder = nn.Sequential(
         nn.Linear(dim_z, 3), nn.ReLU(), nn.Linear(3, dim_z + 1), nn.Softmax()
     )
@@ -42,9 +46,6 @@ if __name__ == "__main__":
     ilcm_decoder = ILCMDecoder(noise_decoder, dim_z)
 
     model = ILCMLite(dim_z, ilcm_encoder, ilcm_decoder)
-
-    import torch
-    from torch.utils.data import Dataset, DataLoader
 
     # Define a custom dataset
     class CustomDataset(Dataset):

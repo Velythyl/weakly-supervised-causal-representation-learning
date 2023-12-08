@@ -3,7 +3,7 @@ from torch import nn
 from torchvision.ops import MLP
 from torch.distributions import Normal, OneHotCategorical, MultivariateNormal
 
-from lite.utils import ConditionalAffineScalarTransform
+from ws_crl_lite.utils import ConditionalAffineScalarTransform
 
 
 class ILCMEncoder(nn.Module):
