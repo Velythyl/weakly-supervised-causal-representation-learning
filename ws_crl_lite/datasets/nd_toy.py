@@ -1,9 +1,11 @@
+import functools
+
 import torch
 from torch.distributions import Normal
-from repo.lite.data.dataset import WSCRLDataset
-#from repo.lite.utils import AffineTransformZ2x
 
-from repo.ws_crl.transforms import make_scalar_transform
+from repo.ws_crl_lite.datasets.dataset import WSCRLDataset
+from repo.ws_crl_lite.datasets.intervset import IntervSet, Uniform, Table
+
 
 def has_cycle_dfs(node, adjacency_matrix, visited, parent):
     visited[node] = True
@@ -33,25 +35,53 @@ def has_cycle(adjacency_matrix):
 def check_symmetric(a, rtol=1e-05, atol=1e-08):
     return torch.allclose(a, a.T, rtol=rtol, atol=atol)
 
+def spicy(self, node_id, prev_ids, data):
+    string = self.G.get_node_attributes(self.index_to_node[node_id])
+
+    print("good development practices <3")
+    def quarantine():
+        for prev in prev_ids:
+            locals()[prev] = data[prev]
+
+        retval = eval(string)
+        return retval
+    return quarantine()
+
 
 class ToyNDDataset(WSCRLDataset):
-    def __init__(self, num_samples, G, dim):
+    def __init__(self, num_samples, G, links, unlinks, intervset):
         adj_mat = nx.adjacency_matrix(G)
         # Convert the adjacency matrix to a NumPy array (if needed)
         adj_mat = adj_mat.toarray()
         self.adj_mat = torch.from_numpy(adj_mat)
+        self.G = G
+        self.intervset = intervset
+
 
         nodes = list(G.nodes())
 
         # Create a mapping between node labels and indices in the adjacency matrix
         node_to_index = {node: index for index, node in enumerate(nodes)}
+        index_to_node = {index: node for index, node in enumerate(nodes)}
+        self.node_to_index = node_to_index
+        self.index_to_node = index_to_node
 
+        self.links = links
+        self.unlinks = unlinks
 
         self.num_nodes = adj_mat.shape[0]
-        assert self.num_nodes == dim
-        #self.transform = AffineTransformZ2x(dim=dim)    #ConditionalAffineScalarTransform()
+        self.markov = intervset.markov
+        self.num_slices = self.markov + 1
+
+
+
         super().__init__(num_samples)
-        #self.transform = make_scalar_transform(n_features=self.num_nodes, layers=5)    #ConditionalAffineScalarTransform()
+
+    def sample_node(self, node_id, prev_data):
+        node_name = self.index_to_node[node_id]
+        link = self.links[node_name]
+        ret = link(prev_data)
+        return ret
 
     def children(self, id):
         row = self.adj_mat[id].squeeze()
@@ -62,6 +92,7 @@ class ToyNDDataset(WSCRLDataset):
         col = self.adj_mat[:,id].squeeze()
         return col.nonzero()
 
+    @functools.lru_cache
     def execution_order(self):
         assert not check_symmetric(self.adj_mat)
         #assert not has_cycle(self.adj_mat)
@@ -100,57 +131,95 @@ class ToyNDDataset(WSCRLDataset):
             dico[node2] = i
 
         return dico
-    def generate(self):
 
-        def base_dist(node_id, prevs, z_i_s_slice):
-            # z_i_s_slice: [num_samples, num_nodes]
+    def resolve_interv(self, interv):
+        # interv is set of ints (node ids) {i,j,k...}
+        interv_names = {self.index_to_node[i] for i in interv}
+        return interv_names
 
-            if len(prevs) == 0:
-                ret = Normal(0.0 + node_id, 1.0).sample_n(z_i_s_slice.shape[0]).squeeze() # THIS IS COMPLETELY ARBITRARY
-                return ret
-
-            assert not (z_i_s_slice[:,prevs] == 0).any()  # this basically says "the node's parents must have been filled before calling base_dist
-
-            prev_mus = prevs.squeeze()
-
-            mu = z_i_s_slice[:,prev_mus]
-            if len(mu.shape) == 2:
-                mu = torch.sum(mu, dim=1)
-            mu += node_id/self.num_nodes * torch.ones((z_i_s_slice.shape[0],))
-
-            ret = Normal(mu, 0.8 ** 2).sample_n(1).squeeze() # THIS IS COMPLETELY ARBITRARY
+    def gen_one(self):
+        def sample_node(node_id, prev_data):
+            node_name = self.index_to_node[node_id]
+            link = self.links[node_name]
+            ret = link(prev_data)
             return ret
 
+        def sample_node_interv(node_id):
+            return self.unlinks[self.index_to_node[node_id]]()
+
         execution_order = self.execution_order()
-
-        z_i_s = torch.zeros((self.num_samples, 2, self.num_nodes))
+        vec = torch.zeros(self.num_nodes)
         for node in execution_order:
-            z_i_s[:,0,node] = base_dist(node_id=node, prevs=self.parents(node), z_i_s_slice=z_i_s[:,0])
+            parents = self.parents(node)
+            if len(parents) >= 0:
+                parent_data = vec[parents]
+            else:
+                parent_data = None
+            vec[node] = sample_node(node, parent_data)
 
-        z_i_s[:, 1, :] = torch.clone(z_i_s[:, 0, :])
+        data = [vec] + [torch.clone(vec) for _ in range(self.markov)]
+        #data = torch.concat(data)
 
-        interventions = torch.randint(low=0, high=self.num_nodes+1, size=(self.num_samples,))  # 0 is always the empty intervention
         dict_node2execution = self.node_index_in_order(execution_order)
 
-        for i, intervention in enumerate(interventions):
-            intervention = intervention.item()
-            if intervention == 0:
+        interv_list = []
+        interv_id_list = []
+
+        intervention = None
+        for m in range(1,self.markov+1,1):
+            if intervention is None:
+                intervention = self.intervset.init(1)
+            else:
+                intervention = self.intervset.pick(intervention)
+
+
+            interv = intervention.self.squeeze()
+            interv_id_list.append(interv.cpu().numpy())
+            interv = self.intervset.id2interv(interv)
+
+            interv_list.append(interv)
+            if len(interv) == 0:
                 continue
 
-            shortcircuit_execution_order = execution_order[dict_node2execution[intervention-1]:]
-            for node in shortcircuit_execution_order:
+            # shortcut
+            skip_to = dict_node2execution[interv[0]]    # first node in execution (others MUST be bigger)
 
-                if node == intervention-1:
-                    prevs = torch.tensor([])
+            #interv_names = self.resolve_interv(interv)
+
+            for node in execution_order[skip_to:]:
+                if node in interv:
+                    val = sample_node_interv(node)
                 else:
-                    prevs = self.parents(node)
+                    val = sample_node(node, data[m-1])
 
-                z_i_s[i,1,node] = base_dist(node_id=node, prevs=prevs, z_i_s_slice=z_i_s[i,1][None])
+                data[m][node] = val
 
-        #ret = self.transform.forward(z_i_s.reshape(self.num_samples * 2, self.num_nodes)).reshape(self.num_samples, 2 ,self.num_nodes)
-        ret = z_i_s * 2 + 5 # small transform
+        return data, interv_list, interv_id_list
 
-        return z_i_s.detach(), ret.detach(), interventions.detach(), ret.detach()
+    def generate(self):
+        latents = []
+        intervs = []
+        interv_ids = []
+        for _ in range(self.num_samples):
+            lat, int, id = self.gen_one()
+
+
+            interv_ids.append(np.array(id))
+            latents.append(torch.vstack(lat))
+            intervs.append(int)
+
+        latents = torch.stack(latents)
+        observations = latents * 2 # TODO replace this by affine transform
+        interv_ids = np.stack(interv_ids)
+
+
+        return latents, observations, intervs, torch.tensor(interv_ids), observations
+
+
+
+
+
+        return z_i_s.detach(), ret.detach(), intervention.detach(), ret.detach()
 
 if __name__ == "__main__":
     import networkx as nx
@@ -162,12 +231,55 @@ if __name__ == "__main__":
     edges = [('A', 'B'), ('B', 'C'), ('A', 'C')]
     G.add_edges_from(edges)
 
-    dataset = ToyNDDataset(100, G, 3)
+
+    adj_mat = nx.adjacency_matrix(G)
+    # Convert the adjacency matrix to a NumPy array (if needed)
+    adj_mat = adj_mat.toarray()
+
+    links = {
+        'A': lambda args: Normal(0.0, 1.0).sample(),
+        'B': lambda args: Normal(0.3 * args[0] ** 2 - 0.6 * args[0], 0.8 ** 2).sample(),
+        'C': lambda args: Normal(0.2 * args[0] ** 2 + -0.8 * args[1], 1.0).sample()
+    }
+    # TODO define standard non-linked dists
+    unlinks = {
+        'A': lambda : links['A'](None),
+        'B': lambda : Normal(0.4, 1.0).sample(),
+        'C': lambda : Normal(-0.3, 1.0).sample()
+    }
+
+
+    x = IntervSet(adj_mat, 2)
+    import numpy as np
+
+    dict_of_tables = {
+        0: np.ones(x.num_interv_ids),
+        1: np.random.uniform(0, 10, size=(x.num_interv_ids, x.num_interv_ids)),
+        2: np.random.uniform(0, 10, size=(x.num_interv_ids, x.num_interv_ids))
+    }
+    dict_of_alphas = {
+        0: [1],
+        1: [1],
+        2: [0.5, 1]
+    }
+
+    switch_case = {
+        0: Table(dict_of_tables, dict_of_alphas),
+        #0: Uniform(no_replace=True),
+        #2: Table(dict_of_tables, dict_of_alphas)
+    }
+
+    x.set_switch_case(switch_case)
+
+    dataset = ToyNDDataset(100, G, links, unlinks, intervset=x)
 
 
     # To access a single sample
     sample = dataset[0]
+    import matplotlib
+    matplotlib.use('TkAgg')
     import matplotlib.pyplot as plt
+
 
     def do_plot(data, interventions):
         fig = plt.figure(figsize=(12, 12))
@@ -197,10 +309,12 @@ if __name__ == "__main__":
         for i in interventions.unique():
             if i == 0:
                 continue
+            if i not in list(range(dataset.num_nodes)):
+                continue
 
             # opt to select the first elements. doesn't change anything anyway.
             selected_intervs = torch.argsort(interventions == i, descending=True)
-            selected_intervs = selected_intervs[:NUM_INTERVS_OF_EACH_TYPE_TO_PLOT]
+            selected_intervs = selected_intervs[:NUM_INTERVS_OF_EACH_TYPE_TO_PLOT].squeeze()
 
             sel_latents = data[selected_intervs]
 
@@ -213,6 +327,6 @@ if __name__ == "__main__":
             plot_many_arrows(sel_latents, color=color[i.int().item()])
         plt.show()
 
-    do_plot(dataset.latents, dataset.interventions)
-    do_plot(dataset.observations, dataset.interventions)
+    do_plot(dataset.latents, dataset.intervention_ids)
+    #do_plot(dataset.observations, dataset.intervention_ids)
     exit()

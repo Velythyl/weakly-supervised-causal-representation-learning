@@ -5,7 +5,7 @@ import torch
 from torch.distributions import Normal
 from torch.utils.data import Dataset
 
-from ws_crl.transforms import make_scalar_transform  # not ws_crl_lite !
+from repo.ws_crl.transforms import make_scalar_transform
 
 
 class Toy2dDataset(Dataset):

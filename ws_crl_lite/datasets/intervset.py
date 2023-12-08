@@ -110,6 +110,12 @@ class Table(_IntervDist):
         return self.dict_of_tables[0].shape[0]
 
     def call(self, BATCH_SIZE, HISTORY_LENGTH, history):
+        def maybe_squeeze(arr):
+            if len(arr.shape) == 2:
+                return arr.squeeze()
+            else:
+                return arr
+
         def weighted_summon(weights):
             if len(weights.shape) == 1:
                 sum = weights.sum()
@@ -128,10 +134,9 @@ class Table(_IntervDist):
 
         if HISTORY_LENGTH == 0:
             weights = self.dict_of_tables[0]
-            return weighted_summon(weights).squeeze()
+            return maybe_squeeze(weighted_summon(weights))
 
         def resolve_weights():
-
             final_weights = np.zeros((BATCH_SIZE, self.num_interv_ids))
             for i in range(HISTORY_LENGTH):
                 weights_for_past = []
@@ -142,7 +147,7 @@ class Table(_IntervDist):
                 weights_for_past = np.vstack(weights_for_past)
                 final_weights += weights_for_past
             return final_weights
-        return weighted_summon(resolve_weights()).squeeze()
+        return maybe_squeeze(weighted_summon(resolve_weights()))
 
 class IntervSet:
     def __init__(self, adj_mat, markov=0):
@@ -152,8 +157,13 @@ class IntervSet:
         self.adj_mat = adj_mat
 
         self.set_of_all_intervs = list(sorted(list(powerset(list(range(self.num_nodes))))))
+
+
         self.interv_ids = np.arange(len(self.set_of_all_intervs))
         self.switch_case = None
+
+    def id2interv(self, id):
+        return self.set_of_all_intervs[id]
 
     @property
     def num_interv_ids(self):

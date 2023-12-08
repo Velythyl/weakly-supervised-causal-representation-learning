@@ -7,7 +7,7 @@ import torch
 from nflows.nn.nets import ResidualNet
 from torch import nn
 
-from ws_crl.nets import make_mlp
+from repo.ws_crl.nets import make_mlp
 
 
 class MaskedSolutionTransform(nn.Module):
