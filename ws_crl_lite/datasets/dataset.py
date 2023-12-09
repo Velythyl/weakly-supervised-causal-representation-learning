@@ -6,7 +6,8 @@ from torch.distributions import Normal
 from torch.utils.data import Dataset
 
 
-from repo.ws_crl.transforms import make_scalar_transform
+from ws_crl.transforms import make_scalar_transform
+
 
 class WSCRLDataset(Dataset):
     def __init__(self, num_samples):

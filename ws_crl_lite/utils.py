@@ -1,4 +1,3 @@
-import nflows
 from nflows.transforms import Transform
 import torch
 from torch import nn

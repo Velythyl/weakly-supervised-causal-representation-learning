@@ -64,15 +64,21 @@ class ILCMDecoder(nn.Module):
         self.dim_z = dim_z
         self.noise_decoder = noise_decoder
 
-        self.adjacency_matrix = nn.Parameter(torch.ones((dim_z, dim_z)), requires_grad=True)
-        self.solution_fns = [
-            ConditionalAffineScalarTransform(
-                nn.Sequential(nn.Linear(dim_z, 3), nn.ReLU(), nn.Linear(3, dim_z))) for _ in range(dim_z)]
+        self.adjacency_matrix = nn.Parameter(torch.zeros((dim_z, dim_z)), requires_grad=True)
 
-        
+        self.params_nets = nn.ModuleList([nn.Sequential(
+                    nn.Linear(dim_z, 5), 
+                    nn.ReLU(),
+                    nn.Linear(5, 5),
+                    nn.ReLU(),
+                    nn.Linear(5, dim_z),
+                ) for _ in range(self.dim_z)])
+
+        self.solution_fns = [ConditionalAffineScalarTransform(self.params_nets[i]) for i in range(dim_z)]
+
     def parents(self, child_idx):
-        mask = self.adjacency_matrix[:, child_idx].clone()
-        mask[child_idx] = 0
+        a = torch.sigmoid(torch.triu(self.adjacency_matrix.clone(), diagonal=1))
+        mask = torch.concat((a[:child_idx, child_idx], torch.zeros(1), (1 - a[child_idx, child_idx + 1:])))
         return mask
 
     def forward(self, e1, e2, intervention):
