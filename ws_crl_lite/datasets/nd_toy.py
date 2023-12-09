@@ -217,11 +217,6 @@ class ToyNDDataset(WSCRLDataset):
         return latents, observations, intervs, torch.tensor(interv_ids), observations
 
 
-
-
-
-        return z_i_s.detach(), ret.detach(), intervention.detach(), ret.detach()
-
 if __name__ == "__main__":
     import networkx as nx
 
@@ -238,9 +233,9 @@ if __name__ == "__main__":
     adj_mat = adj_mat.toarray()
 
     links = {
-        'A': lambda args: Normal(0.0, 1.0).sample(),
-        'B': lambda args: Normal(0.3 * args[0] ** 2 - 0.6 * args[0], 0.8 ** 2).sample(),
-        'C': lambda args: Normal(0.2 * args[0] ** 2 + -0.8 * args[1], 1.0).sample()
+        'A': lambda parents: Normal(0.0, 1.0).sample(),
+        'B': lambda parents: Normal(0.3 * parents[0] ** 2 - 0.6 * parents[0], 0.8 ** 2).sample(),
+        'C': lambda parents: Normal(0.2 * parents[0] ** 2 + -0.8 * parents[1], 1.0).sample()
     }
     # TODO define standard non-linked dists
     unlinks = {
@@ -248,7 +243,6 @@ if __name__ == "__main__":
         'B': lambda : Normal(0.4, 1.0).sample(),
         'C': lambda : Normal(-0.3, 1.0).sample()
     }
-
 
     x = IntervSet(adj_mat, 2)
     import numpy as np
@@ -272,7 +266,7 @@ if __name__ == "__main__":
 
     x.set_switch_case(switch_case)
 
-    dataset = ToyNDDataset(100, G, links, unlinks, intervset=x)
+    dataset = ToyNDDataset(10000, G, links, unlinks, intervset=x)
 
 
     # To access a single sample
