@@ -9,7 +9,7 @@ import nflows.nn.nets
 import torch
 from torch import nn
 
-from ws_crl_minimal.causal.graph import ENCOLearnedGraph, DDSLearnedGraph, FixedOrderLearnedGraph
+# from ws_crl_minimal.causal.graph import ENCOLearnedGraph, DDSLearnedGraph, FixedOrderLearnedGraph
 from ws_crl_minimal.transforms import make_mlp_structure_transform, MaskedSolutionTransform
 from ws_crl_minimal.utils import mask, clean_and_clamp
 
@@ -387,19 +387,19 @@ class MLPImplicitSCM(ImplicitSCM):
             "none_fixed_order",
             "none_trivial",
         }
-        if graph_parameterization == "enco":
-            graph = ENCOLearnedGraph(dim_z)
-        elif graph_parameterization == "dds":
-            graph = DDSLearnedGraph(dim_z)
-        elif graph_parameterization == "fixed_order":
-            graph = FixedOrderLearnedGraph(dim_z)
-        elif graph_parameterization == "none_fixed_order":
-            graph = None
-            causal_structure = "fixed_order"
-        elif graph_parameterization == "none_trivial":
-            graph = None
-            causal_structure = "trivial"
-        else:
+        # if graph_parameterization == "enco":
+        #     graph = ENCOLearnedGraph(dim_z)
+        # elif graph_parameterization == "dds":
+        #     graph = DDSLearnedGraph(dim_z)
+        # elif graph_parameterization == "fixed_order":
+        #     graph = FixedOrderLearnedGraph(dim_z)
+        # elif graph_parameterization == "none_fixed_order":
+        #     graph = None
+        #     causal_structure = "fixed_order"
+        # elif graph_parameterization == "none_trivial":
+        #     graph = None
+        #     causal_structure = "trivial"
+        if graph_parameterization == "none":
             graph = None
             causal_structure = "none"
 

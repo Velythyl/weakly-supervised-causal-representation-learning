@@ -16,14 +16,16 @@ from ws_crl_minimal.lcm import FlowLCM
 from ws_crl_minimal.training import VAEMetrics
 from ws_crl_minimal.metrics import compute_dci
 from ws_crl_minimal.causal.graph import create_graph
-from ws_crl_minimal.causal.scm import (
-    MLPFixedOrderSCM,
-    MLPVariableOrderCausalModel,
-    UnstructuredPrior,
-    FixedGraphLinearANM,
-)
+from ws_crl_minimal.causal.scm import FixedGraphLinearANM  # TODO: figure out what this does
+# (
+#     MLPFixedOrderSCM,
+#     MLPVariableOrderCausalModel,
+#     UnstructuredPrior,
+#     FixedGraphLinearANM,
+# )
 from ws_crl_minimal.causal.implicit_scm import MLPImplicitSCM
-from ws_crl_minimal.lcm import ELCM, ILCM
+# from ws_crl_minimal.lcm import ELCM, ILCM
+from ws_crl_minimal.lcm import ILCM
 from ws_crl_minimal.posthoc_graph_learning import (
     compute_implicit_causal_effects,
     find_topological_order,
@@ -84,9 +86,10 @@ def create_model(cfg):
     encoder, decoder = create_encoder_decoder(cfg)
 
     if cfg.model.type == "causal_vae":
-        model = ELCM(
-            scm, encoder=encoder, decoder=decoder, intervention_prior=None, dim_z=cfg.model.dim_z
-        )
+        pass
+        # model = ELCM(
+        #     scm, encoder=encoder, decoder=decoder, intervention_prior=None, dim_z=cfg.model.dim_z
+        # )
     elif cfg.model.type == "intervention_noise_vae":
         intervention_encoder = create_intervention_encoder(cfg)
         model = ILCM(
@@ -115,22 +118,23 @@ def create_scm(cfg):
     """Create SCM or implicit causal structure"""
 
     logger.info(f"Creating {cfg.model.scm.type} SCM")
-    noise_centric = cfg.model.type in {
-        "noise_vae",
-        "intervention_noise_vae",
-        "alt_intervention_noise_vae",
-    }
 
-    if cfg.model.scm.type == "ground_truth":
-        raise NotImplementedError
-    elif cfg.model.scm.type == "unstructured":  # Baseline VAE
-        scm = UnstructuredPrior(dim_z=cfg.model.dim_z)
-    elif noise_centric and cfg.model.scm.type == "mlp":
+    # We are only caring about the ILCM model and it should always be noise-centric
+    noise_centric = cfg.model.type in {"intervention_noise_vae"}
+    if cfg.model.type != "intervention_noise_vae":
+        raise RuntimeError(f"Expected to only have 'intervention_noise_vae' models, but got: {cfg.model.type}")
+
+    # if cfg.model.scm.type == "ground_truth":
+    #     raise NotImplementedError
+    # elif cfg.model.scm.type == "unstructured":  # Baseline VAE
+    #     # scm = UnstructuredPrior(dim_z=cfg.model.dim_z)
+    #     raise NotImplementedError
+    if noise_centric and cfg.model.scm.type == "mlp":
         logger.info(
             f"Graph parameterization for noise-centric learning: {cfg.model.scm.adjacency_matrix}"
         )
         scm = MLPImplicitSCM(
-            graph_parameterization=cfg.model.scm.adjacency_matrix,
+            graph_parameterization=cfg.model.scm.adjacency_matrix,  # seems to always be none
             manifold_thickness=cfg.model.scm.manifold_thickness,
             hidden_units=cfg.model.scm.hidden_units,
             hidden_layers=cfg.model.scm.hidden_layers,
@@ -138,39 +142,41 @@ def create_scm(cfg):
             dim_z=cfg.model.dim_z,
             min_std=cfg.model.scm.min_std,
         )
-    elif (
-        not noise_centric
-        and cfg.model.scm.type == "mlp"
-        and cfg.model.scm.adjacency_matrix in {"enco", "dds"}
-    ):
-        logger.info(
-            f"Adjacency matrix: learnable, {cfg.model.scm.adjacency_matrix} parameterization"
-        )
-        scm = MLPVariableOrderCausalModel(
-            graph_parameterization=cfg.model.scm.adjacency_matrix,
-            manifold_thickness=cfg.model.scm.manifold_thickness,
-            hidden_units=cfg.model.scm.hidden_units,
-            hidden_layers=cfg.model.scm.hidden_layers,
-            homoskedastic=cfg.model.scm.homoskedastic,
-            dim_z=cfg.model.dim_z,
-            enhance_causal_effects_at_init=False,
-            min_std=cfg.model.scm.min_std,
-        )
-    elif (
-        not noise_centric
-        and cfg.model.scm.type == "mlp"
-        and cfg.model.scm.adjacency_matrix == "fixed_order"
-    ):
-        logger.info(f"Adjacency matrix: learnable, fixed topological order")
-        scm = MLPFixedOrderSCM(
-            manifold_thickness=cfg.model.scm.manifold_thickness,
-            hidden_units=cfg.model.scm.hidden_units,
-            hidden_layers=cfg.model.scm.hidden_layers,
-            homoskedastic=cfg.model.scm.homoskedastic,
-            dim_z=cfg.model.dim_z,
-            enhance_causal_effects_at_init=False,
-            min_std=cfg.model.scm.min_std,
-        )
+    # elif (
+    #     not noise_centric
+    #     and cfg.model.scm.type == "mlp"
+    #     and cfg.model.scm.adjacency_matrix in {"enco", "dds"}
+    # ):
+    #     logger.info(
+    #         f"Adjacency matrix: learnable, {cfg.model.scm.adjacency_matrix} parameterization"
+    #     )
+    #     raise NotImplementedError
+    #     # scm = MLPVariableOrderCausalModel(
+    #     #     graph_parameterization=cfg.model.scm.adjacency_matrix,
+    #     #     manifold_thickness=cfg.model.scm.manifold_thickness,
+    #     #     hidden_units=cfg.model.scm.hidden_units,
+    #     #     hidden_layers=cfg.model.scm.hidden_layers,
+    #     #     homoskedastic=cfg.model.scm.homoskedastic,
+    #     #     dim_z=cfg.model.dim_z,
+    #     #     enhance_causal_effects_at_init=False,
+    #     #     min_std=cfg.model.scm.min_std,
+    #     # )
+    # elif (
+    #     not noise_centric
+    #     and cfg.model.scm.type == "mlp"
+    #     and cfg.model.scm.adjacency_matrix == "fixed_order"
+    # ):
+    #     logger.info(f"Adjacency matrix: learnable, fixed topological order")
+    #     raise NotImplementedError
+    #     # scm = MLPFixedOrderSCM(
+    #     #     manifold_thickness=cfg.model.scm.manifold_thickness,
+    #     #     hidden_units=cfg.model.scm.hidden_units,
+    #     #     hidden_layers=cfg.model.scm.hidden_layers,
+    #     #     homoskedastic=cfg.model.scm.homoskedastic,
+    #     #     dim_z=cfg.model.dim_z,
+    #     #     enhance_causal_effects_at_init=False,
+    #     #     min_std=cfg.model.scm.min_std,
+    #     # )
     else:
         raise ValueError(f"Unknown value for cfg.model.scm.type: {cfg.model.scm.type}")
 
@@ -273,8 +279,8 @@ def train(cfg, model):
             x1, x2, z1, z2, intervention_labels, true_interventions = (
                 x1.to(device),
                 x2.to(device),
-                z1.to(device),
-                z2.to(device),
+                z1.to(device),  # not used in training, only eval
+                z2.to(device),  # not used in training, only eval
                 intervention_labels.to(device),
                 true_interventions.to(device),
             )
