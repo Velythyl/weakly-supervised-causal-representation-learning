@@ -50,7 +50,11 @@ class ToyNDDataset(WSCRLDataset):
         interventions = torch.stack(interventions)
         self.interventions = interventions
 
-        self.flow_encoder = FlowEncoder(input_features=self.num_nodes, output_features=self.num_nodes, transform_blocks=5)
+        self.flow_encoder = FlowEncoder(
+            input_features=self.num_nodes,
+            output_features=self.num_nodes,
+            transform_blocks=5
+        )
 
         super().__init__(num_samples)
 
@@ -104,7 +108,6 @@ class ToyNDDataset(WSCRLDataset):
             set_of_intervened_nodes = m_interv_sets[m-1]
             if torch.sum(set_of_intervened_nodes) == 0:
                 continue    # no intervention
-
             set_of_intervened_nodes = tuple(set_of_intervened_nodes.nonzero().unique().cpu().numpy())
 
             for node in self.execution_order:
@@ -130,7 +133,7 @@ class ToyNDDataset(WSCRLDataset):
             latents.append(lat)
 
         latents = torch.stack(latents)
-        observations = torch.stack(observations) #self.flow_encoder(latents) # todo
+        observations = torch.stack(observations)
 
         return latents, observations, self.interventions, self.intervention_ids
 
@@ -138,33 +141,19 @@ class ToyNDDataset(WSCRLDataset):
 if __name__ == "__main__":
     import networkx as nx
 
-
+    # FIRST, CREATE A GRAPH
     G = nx.DiGraph()
-
-    # Add edges to the graph based on the structure you provided
+    # Add edges to the graph
     edges = [('A', 'B'), ('B', 'C'), ('A', 'C')]
     G.add_edges_from(edges)
 
-
-    adj_mat = nx.adjacency_matrix(G)
-    # Convert the adjacency matrix to a NumPy array (if needed)
-    adj_mat = adj_mat.toarray()
-
-    links = {
-        'A': lambda parents: Normal(0.0, 1.0).sample(),
-        'B': lambda parents: Normal(0.3 * parents[0] ** 2 - 0.6 * parents[0], 0.8 ** 2).sample(),
-        'C': lambda parents: Normal(0.2 * parents[0] ** 2 + -0.8 * parents[1], 1.0).sample()
-    }
-    # TODO define standard non-linked dists
-    unlinks = {
-        'A': lambda : links['A'](None),
-        'B': lambda : Normal(0.4, 1.0).sample(),
-        'C': lambda : Normal(-0.3, 1.0).sample()
-    }
-
-    x = IntervSet(adj_mat, 2)
+    # COMPUTE THE SET OF INTERVENTIONS: THE INTERVSET
+    x = IntervSet(G, 2)
+    print(x.set_of_all_intervs)
     import numpy as np
 
+    # GIVEN THE PRINTED STATEMENT ABOVE, YOU CAN DEFINE YOUR TABLES.
+    # (it's also easy to automate this using a forloop on the markov length)
     dict_of_tables = {
         0: np.ones(x.num_interv_ids),
         1: np.random.uniform(0, 10, size=(x.num_interv_ids, x.num_interv_ids)),
@@ -175,14 +164,27 @@ if __name__ == "__main__":
         1: [1],
         2: [0.5, 1]
     }
-
+    # PASS THE TABLE AND ALPHAS TO THE INTERVSET CALCULATOR
     switch_case = IntervTable(dict_of_tables, dict_of_alphas)
-        #0: Uniform(no_replace=True),
-        #2: Table(dict_of_tables, dict_of_alphas)
-
-
     x.set_tables(switch_case)
 
+    # DEFINE THE RELATIONSHIP OF EACH NODE TO ITS PARENT
+    # (to automate this, just an affine transform given the parents)
+    links = {
+        'A': lambda parents: Normal(0.0, 1.0).sample(),
+        'B': lambda parents: Normal(0.3 * parents[0] ** 2 - 0.6 * parents[0], 0.8 ** 2).sample(),
+        'C': lambda parents: Normal(0.2 * parents[0] ** 2 + -0.8 * parents[1], 1.0).sample()
+    }
+
+    # DEFINE HOW THE NODES BEHAVE WHEN THEY GET INTERVENED ON
+    # (to automate this, just sample from a normal or something of the sort)
+    unlinks = {
+        'A': lambda: links['A'](None),
+        'B': lambda: Normal(0.4, 1.0).sample(),
+        'C': lambda: Normal(-0.3, 1.0).sample()
+    }
+
+    # PASS THE GRAPH, THE LINKS, THE UNLINKS, AND THE INTERVSET
     dataset = ToyNDDataset(100, G, links, unlinks, intervset=x)
 
 
@@ -253,6 +255,7 @@ if __name__ == "__main__":
             plot_intervs(data[:,1:,:], dataset.intervention_ids[:,1].squeeze())
         plt.show()
     plot_3d(dataset.latents)
+    plot_3d(dataset.observations)
     #do_plot(dataset.latents, dataset.intervention_ids.squeeze(), "black")
     #do_plot(dataset.observations, dataset.intervention_ids)
     exit()

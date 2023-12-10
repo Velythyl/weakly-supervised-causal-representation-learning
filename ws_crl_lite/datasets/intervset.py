@@ -108,7 +108,10 @@ class IntervTable:
         return ret
 
 class IntervSet:
-    def __init__(self, adj_mat, markov=0):
+    def __init__(self, G, markov=0):
+        adj_mat = nx.adjacency_matrix(G)
+        # Convert the adjacency matrix to a NumPy array (if needed)
+        adj_mat = adj_mat.toarray()
         self.markov = markov
 
         self.num_nodes = adj_mat.shape[0]
