@@ -27,15 +27,12 @@ class WSCRLDataset(Dataset):
     def __init__(self, num_samples):
         self.num_samples = num_samples
 
-        self.latents, self.observations, self.interventions, self.intervention_ids, self.data = self.generate()
+        self.latents, self.observations, self.interventions, self.intervention_ids = self.generate()
         self.latents = maybe_detach(self.latents)
         self.observations = maybe_detach(self.observations)
         self.interventions = maybe_detach(self.interventions)
         # todo change this to a one-hot
         self.intervention_ids = maybe_detach(self.intervention_ids)
-        self.data = maybe_detach(self.data)
-
-        i=0
 
 
         """
@@ -48,11 +45,11 @@ class WSCRLDataset(Dataset):
 
     @property
     def num_interv_types(self):
-        return self.interventions.unique().shape[0]
+        return self.intervention_ids.unique().shape[0]
 
     def __len__(self):
         return self.num_samples
 
     def __getitem__(self, idx):
-        return self.data[idx]
+        return self.observations[idx]
 

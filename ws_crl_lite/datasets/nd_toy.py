@@ -4,152 +4,87 @@ import torch
 from torch.distributions import Normal
 
 from repo.ws_crl_lite.datasets.dataset import WSCRLDataset
-from repo.ws_crl_lite.datasets.intervset import IntervSet, Uniform, Table
-
-
-def has_cycle_dfs(node, adjacency_matrix, visited, parent):
-    visited[node] = True
-
-    for neighbor in range(len(adjacency_matrix)):
-        if adjacency_matrix[node][neighbor]:
-            if not visited[neighbor]:
-                if has_cycle_dfs(neighbor, adjacency_matrix, visited, node):
-                    return True
-            elif parent != neighbor:
-                return True
-
-    return False
-
-def has_cycle(adjacency_matrix):
-    num_nodes = len(adjacency_matrix)
-    visited = [False] * num_nodes
-
-    for node in range(num_nodes):
-        if not visited[node]:
-            if has_cycle_dfs(node, adjacency_matrix, visited, -1):
-                return True
-
-    return False
-
-
-def check_symmetric(a, rtol=1e-05, atol=1e-08):
-    return torch.allclose(a, a.T, rtol=rtol, atol=atol)
-
-def spicy(self, node_id, prev_ids, data):
-    string = self.G.get_node_attributes(self.index_to_node[node_id])
-
-    print("good development practices <3")
-    def quarantine():
-        for prev in prev_ids:
-            locals()[prev] = data[prev]
-
-        retval = eval(string)
-        return retval
-    return quarantine()
-
+from repo.ws_crl_lite.datasets.intervset import IntervSet, IntervTable
 
 class ToyNDDataset(WSCRLDataset):
     def __init__(self, num_samples, G, links, unlinks, intervset):
         adj_mat = nx.adjacency_matrix(G)
-        # Convert the adjacency matrix to a NumPy array (if needed)
         adj_mat = adj_mat.toarray()
         self.adj_mat = torch.from_numpy(adj_mat)
         self.G = G
+
+        self.links = links
+        self.unlinks = unlinks
         self.intervset = intervset
 
-
         nodes = list(G.nodes())
-
-        # Create a mapping between node labels and indices in the adjacency matrix
         node_to_index = {node: index for index, node in enumerate(nodes)}
         index_to_node = {index: node for index, node in enumerate(nodes)}
         self.node_to_index = node_to_index
         self.index_to_node = index_to_node
 
-        self.links = links
-        self.unlinks = unlinks
-
         self.num_nodes = adj_mat.shape[0]
         self.markov = intervset.markov
-        self.num_slices = self.markov + 1
 
+        self.execution_order = [node_to_index[n] for n in nx.topological_sort(G)]
 
+        ALL_INTERVENTIONS = [self.intervset.init(num_samples)] # 1 is batch_size (here we are generating point-by-point, so it's 1
+        for m in range(self.markov-1):
+            ALL_INTERVENTIONS.append(
+                self.intervset.pick(ALL_INTERVENTIONS[-1])
+            )
+        self.intervention_ids = torch.stack([i.self for i in ALL_INTERVENTIONS]).T
+
+        interventions = []
+        for s in range(num_samples):
+            ret = []
+            for m in range(self.markov):
+                vec = torch.zeros(self.num_nodes).int()
+                set_of_intervened_nodes = self.intervset.id2interv(self.intervention_ids[s,m])
+                for n in set_of_intervened_nodes:
+                    vec[n] = 1
+                ret.append(vec)
+            interventions.append(torch.stack(ret))
+        interventions = torch.stack(interventions)
+        self.interventions = interventions
 
         super().__init__(num_samples)
 
-    def sample_node(self, node_id, prev_data):
-        node_name = self.index_to_node[node_id]
-        link = self.links[node_name]
-        ret = link(prev_data)
-        return ret
 
     def children(self, id):
         row = self.adj_mat[id].squeeze()
-
         return row.nonzero()
 
     def parents(self, id):
         col = self.adj_mat[:,id].squeeze()
         return col.nonzero()
 
-    @functools.lru_cache
-    def execution_order(self):
-        assert not check_symmetric(self.adj_mat)
-        #assert not has_cycle(self.adj_mat)
-
-        nodeset = set(torch.arange(self.num_nodes).tolist())
-
-        column_sums = torch.sum(self.adj_mat, dim=0)
-        # Get nodes with no parents
-        nodes_no_parents = torch.where(column_sums == 0)[0]
-
-        execution_order = nodes_no_parents.tolist()
-        while set(execution_order) != nodeset:
-            add_to_order = []
-            for node in execution_order:
-                for child in self.children(node):
-                    if child in execution_order or child in add_to_order:
-                        continue
-
-                    childs_parents = self.parents(child)
-
-                    all_in_execution_order = True
-                    for childs_parent in childs_parents:
-                        if childs_parent not in execution_order:
-                            all_in_execution_order = False
-                            break
-
-                    if all_in_execution_order:
-                        add_to_order.append(child.squeeze().item())
-            execution_order = execution_order + add_to_order
-        return execution_order
-
-    def node_index_in_order(self, execution_order):
-        dico = {}
-
-        for i, node2 in enumerate(execution_order):
-            dico[node2] = i
-
-        return dico
-
     def resolve_interv(self, interv):
         # interv is set of ints (node ids) {i,j,k...}
         interv_names = {self.index_to_node[i] for i in interv}
         return interv_names
 
-    def gen_one(self):
-        def sample_node(node_id, prev_data):
+    @functools.lru_cache
+    def unreachables(self, sources):
+        unreachables = set(range(self.num_nodes))  # assume all unreachable
+        for node in sources:
+            reachable_from_node = set([self.node_to_index[n] for n in nx.descendants(self.G, self.index_to_node[node])])
+            unreachables -= reachable_from_node
+            unreachables -= set([node])
+        return unreachables
+
+    def gen_one(self, m_interv_sets):
+        def sample_node(node_id, parent_data):
             node_name = self.index_to_node[node_id]
             link = self.links[node_name]
-            ret = link(prev_data)
+            ret = link(parent_data)
             return ret
 
         def sample_node_interv(node_id):
             return self.unlinks[self.index_to_node[node_id]]()
 
-        execution_order = self.execution_order()
         vec = torch.zeros(self.num_nodes)
-        for node in execution_order:
+        for node in self.execution_order:
             parents = self.parents(node)
             if len(parents) >= 0:
                 parent_data = vec[parents]
@@ -157,64 +92,40 @@ class ToyNDDataset(WSCRLDataset):
                 parent_data = None
             vec[node] = sample_node(node, parent_data)
 
-        data = [vec] + [torch.clone(vec) for _ in range(self.markov)]
-        #data = torch.concat(data)
+        data = [vec]
 
-        dict_node2execution = self.node_index_in_order(execution_order)
-
-        interv_list = []
-        interv_id_list = []
-
-        intervention = None
         for m in range(1,self.markov+1,1):
-            if intervention is None:
-                intervention = self.intervset.init(1)
-            else:
-                intervention = self.intervset.pick(intervention)
+            data += [torch.clone(data[m-1])]
 
+            set_of_intervened_nodes = m_interv_sets[m-1]
+            if torch.sum(set_of_intervened_nodes) == 0:
+                continue    # no intervention
 
-            interv = intervention.self.squeeze()
-            interv_id_list.append(interv.cpu().numpy())
-            interv = self.intervset.id2interv(interv)
+            set_of_intervened_nodes = tuple(set_of_intervened_nodes.nonzero().unique().cpu().numpy())
 
-            interv_list.append(interv)
-            if len(interv) == 0:
-                continue
+            for node in self.execution_order:
+                if node in self.unreachables(set_of_intervened_nodes):
+                    continue
 
-            # shortcut
-            skip_to = dict_node2execution[interv[0]]    # first node in execution (others MUST be bigger)
-            # todo this skip logic is broken
-
-            #interv_names = self.resolve_interv(interv)
-
-            for node in execution_order[skip_to:]:
-                if node in interv:
+                if node in set_of_intervened_nodes:
                     val = sample_node_interv(node)
                 else:
-                    val = sample_node(node, data[m-1])
+                    val = sample_node(node, data[-1][self.parents(node)])
 
                 data[m][node] = val
 
-        return data, interv_list, interv_id_list
+        return data
 
     def generate(self):
         latents = []
-        intervs = []
-        interv_ids = []
-        for _ in range(self.num_samples):
-            lat, int, id = self.gen_one()
-
-
-            interv_ids.append(np.array(id))
+        for i in range(self.num_samples):
+            lat = self.gen_one(self.interventions[i])
             latents.append(torch.vstack(lat))
-            intervs.append(int)
 
         latents = torch.stack(latents)
-        observations = latents * 2 # TODO replace this by affine transform
-        interv_ids = np.stack(interv_ids)
+        observations = 2 * latents # todo
 
-
-        return latents, observations, intervs, torch.tensor(interv_ids), observations
+        return latents, observations, self.interventions, self.intervention_ids
 
 
 if __name__ == "__main__":
@@ -244,7 +155,7 @@ if __name__ == "__main__":
         'C': lambda : Normal(-0.3, 1.0).sample()
     }
 
-    x = IntervSet(adj_mat, 2)
+    x = IntervSet(adj_mat, 1)
     import numpy as np
 
     dict_of_tables = {
@@ -258,15 +169,14 @@ if __name__ == "__main__":
         2: [0.5, 1]
     }
 
-    switch_case = {
-        0: Table(dict_of_tables, dict_of_alphas),
+    switch_case = IntervTable(dict_of_tables, dict_of_alphas)
         #0: Uniform(no_replace=True),
         #2: Table(dict_of_tables, dict_of_alphas)
-    }
+
 
     x.set_switch_case(switch_case)
 
-    dataset = ToyNDDataset(10000, G, links, unlinks, intervset=x)
+    dataset = ToyNDDataset(100, G, links, unlinks, intervset=x)
 
 
     # To access a single sample
@@ -301,27 +211,38 @@ if __name__ == "__main__":
         # how many intervs to push??????
         ax.scatter(plot_data[:, 0], plot_data[:, 1], plot_data[:,2])
         NUM_INTERVS_OF_EACH_TYPE_TO_PLOT = 2
+
+        min_interv = interventions[interventions != 0].min()
+        max_interv = interventions[interventions != 0].max()
+
         for i in interventions.unique():
             if i == 0:
                 continue
-            if i not in list(range(dataset.num_nodes)):
-                continue
+            #if i not in list(range(dataset.num_nodes+1)): # skips intervs on more than one node
+            #    continue
 
             # opt to select the first elements. doesn't change anything anyway.
             selected_intervs = torch.argsort(interventions == i, descending=True)
             selected_intervs = selected_intervs[:NUM_INTERVS_OF_EACH_TYPE_TO_PLOT].squeeze()
+            assert (interventions[selected_intervs] == i).all()
 
             sel_latents = data[selected_intervs]
 
+            import matplotlib.cm as cm
+            from matplotlib.colors import Normalize
+            cmap = cm.viridis
+            norm = Normalize(vmin=min_interv, vmax=max_interv)
             color = {
                 1: "red",
                 2: "blue",
                 3: "green",
                 0: None
             }
-            plot_many_arrows(sel_latents, color=color[i.int().item()])
-        plt.show()
 
-    do_plot(dataset.latents, dataset.intervention_ids)
+            plot_many_arrows(sel_latents, color=cmap(norm(i)))
+        plt.show()
+    if dataset.markov == 2:
+        raise Exception("cant plot m>2")
+    do_plot(dataset.latents, dataset.intervention_ids.squeeze())
     #do_plot(dataset.observations, dataset.intervention_ids)
     exit()
