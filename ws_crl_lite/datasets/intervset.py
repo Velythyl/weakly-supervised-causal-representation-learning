@@ -34,13 +34,6 @@ def to_np(arr):
     assert isinstance(arr, torch.Tensor)
     return arr.detach().cpu().numpy().astype(int)
 
-def dict_to_tensor(dico):
-    temp = {}
-    for k, c in dico.items():
-        temp[k] = to_tensor(c)
-    return temp
-
-
 class IntervTable:
     def __init__(self, dict_of_tables, dict_of_alphas):
         super().__init__()
@@ -125,6 +118,7 @@ class IntervSet:
         self.interv_ids = np.arange(len(self.set_of_all_intervs))
 
         self.switch_case = None
+        self.set_tables(None)
 
     def id2interv(self, id):
         return self.set_of_all_intervs[id]
@@ -133,7 +127,7 @@ class IntervSet:
     def num_interv_ids(self):
         return self.interv_ids.shape[0]
 
-    def set_switch_case(self, switch_case):
+    def set_tables(self, switch_case):
         if switch_case is None:
             # default to uniform
             switch_case = IntervTable.uniform(self.num_interv_ids, self.markov)
@@ -189,7 +183,7 @@ if __name__ == "__main__":
         2: Table(dict_of_tables, dict_of_alphas)
     }
 
-    x.set_switch_case(switch_case)
+    x.set_tables(switch_case)
 
     t0 = x.init(100)
     t1 = x.pick(t0)

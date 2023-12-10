@@ -3,8 +3,9 @@ import functools
 import torch
 from torch.distributions import Normal
 
-from repo.ws_crl_lite.datasets.dataset import WSCRLDataset
-from repo.ws_crl_lite.datasets.intervset import IntervSet, IntervTable
+from ws_crl.encoder import FlowEncoder
+from ws_crl_lite.datasets.dataset import WSCRLDataset
+from ws_crl_lite.datasets.intervset import IntervSet, IntervTable
 
 class ToyNDDataset(WSCRLDataset):
     def __init__(self, num_samples, G, links, unlinks, intervset):
@@ -35,6 +36,7 @@ class ToyNDDataset(WSCRLDataset):
             )
         self.intervention_ids = torch.stack([i.self for i in ALL_INTERVENTIONS]).T
 
+        # this messed up looking 3-for-loop piece of shit just builds one-hots
         interventions = []
         for s in range(num_samples):
             ret = []
@@ -47,6 +49,8 @@ class ToyNDDataset(WSCRLDataset):
             interventions.append(torch.stack(ret))
         interventions = torch.stack(interventions)
         self.interventions = interventions
+
+        self.flow_encoder = FlowEncoder(input_features=self.num_nodes, output_features=self.num_nodes, transform_blocks=5)
 
         super().__init__(num_samples)
 
@@ -118,12 +122,15 @@ class ToyNDDataset(WSCRLDataset):
 
     def generate(self):
         latents = []
+        observations = []
         for i in range(self.num_samples):
             lat = self.gen_one(self.interventions[i])
-            latents.append(torch.vstack(lat))
+            lat = torch.stack(lat)
+            observations.append(self.flow_encoder(lat)[0])
+            latents.append(lat)
 
         latents = torch.stack(latents)
-        observations = 2 * latents # todo
+        observations = torch.stack(observations) #self.flow_encoder(latents) # todo
 
         return latents, observations, self.interventions, self.intervention_ids
 
@@ -155,7 +162,7 @@ if __name__ == "__main__":
         'C': lambda : Normal(-0.3, 1.0).sample()
     }
 
-    x = IntervSet(adj_mat, 1)
+    x = IntervSet(adj_mat, 2)
     import numpy as np
 
     dict_of_tables = {
@@ -174,7 +181,7 @@ if __name__ == "__main__":
         #2: Table(dict_of_tables, dict_of_alphas)
 
 
-    x.set_switch_case(switch_case)
+    x.set_tables(switch_case)
 
     dataset = ToyNDDataset(100, G, links, unlinks, intervset=x)
 
@@ -185,10 +192,27 @@ if __name__ == "__main__":
     matplotlib.use('TkAgg')
     import matplotlib.pyplot as plt
 
+    def plot_3d(data):
+        interventions = dataset.intervention_ids
+        min_interv = interventions[interventions != 0].min()
+        max_interv = interventions[interventions != 0].max()
+        import matplotlib.cm as cm
+        from matplotlib.colors import Normalize
 
-    def do_plot(data, interventions):
+        cmap = cm.viridis
+        norm = Normalize(vmin=min_interv, vmax=max_interv)
+
         fig = plt.figure(figsize=(12, 12))
         ax = fig.add_subplot(projection='3d')
+
+        color = {
+            0: "red",
+            1: "green",
+            2: "blue",
+        }
+        for i in range(data.shape[1]):
+            ar = data[:,i]
+            ax.scatter(ar[:, 0], ar[:, 1], ar[:, 2], color=color[i])
 
         def plot_many_arrows(pairs, color):
             # pairs is of shape [n arrows, 2, (x,y)]
@@ -207,42 +231,28 @@ if __name__ == "__main__":
             for i in range(base_x.shape[0]):
                 ax.plot([base_x[i], end_x[i]], [base_y[i], end_y[i]], [base_z[i], end_z[i]], color=color)
 
-        plot_data = data.reshape(len(dataset) * 2, 3)
-        # how many intervs to push??????
-        ax.scatter(plot_data[:, 0], plot_data[:, 1], plot_data[:,2])
-        NUM_INTERVS_OF_EACH_TYPE_TO_PLOT = 2
+        def plot_intervs(data, interventions):
+            NUM_INTERVS_OF_EACH_TYPE_TO_PLOT = 2
 
-        min_interv = interventions[interventions != 0].min()
-        max_interv = interventions[interventions != 0].max()
+            for i in interventions.unique():
+                if i == 0:
+                    continue
+                #if i not in list(range(dataset.num_nodes+1)): # skips intervs on more than one node
+                #    continue
 
-        for i in interventions.unique():
-            if i == 0:
-                continue
-            #if i not in list(range(dataset.num_nodes+1)): # skips intervs on more than one node
-            #    continue
+                # opt to select the first elements. doesn't change anything anyway.
+                selected_intervs = torch.argsort(interventions == i, descending=True)
+                selected_intervs = selected_intervs[:NUM_INTERVS_OF_EACH_TYPE_TO_PLOT].squeeze()
+                assert (interventions[selected_intervs] == i).all()
 
-            # opt to select the first elements. doesn't change anything anyway.
-            selected_intervs = torch.argsort(interventions == i, descending=True)
-            selected_intervs = selected_intervs[:NUM_INTERVS_OF_EACH_TYPE_TO_PLOT].squeeze()
-            assert (interventions[selected_intervs] == i).all()
+                sel_latents = data[selected_intervs]
+                plot_many_arrows(sel_latents, color=cmap(norm(i)))
 
-            sel_latents = data[selected_intervs]
-
-            import matplotlib.cm as cm
-            from matplotlib.colors import Normalize
-            cmap = cm.viridis
-            norm = Normalize(vmin=min_interv, vmax=max_interv)
-            color = {
-                1: "red",
-                2: "blue",
-                3: "green",
-                0: None
-            }
-
-            plot_many_arrows(sel_latents, color=cmap(norm(i)))
+        plot_intervs(data[:,:2,:], dataset.intervention_ids[:,0].squeeze())
+        if dataset.markov == 2:
+            plot_intervs(data[:,1:,:], dataset.intervention_ids[:,1].squeeze())
         plt.show()
-    if dataset.markov == 2:
-        raise Exception("cant plot m>2")
-    do_plot(dataset.latents, dataset.intervention_ids.squeeze())
+    plot_3d(dataset.latents)
+    #do_plot(dataset.latents, dataset.intervention_ids.squeeze(), "black")
     #do_plot(dataset.observations, dataset.intervention_ids)
     exit()

@@ -7,7 +7,6 @@ from torch.distributions import Normal
 from torch.utils.data import Dataset
 
 
-from repo.ws_crl.transforms import make_scalar_transform
 
 def maybe_detach(arr):
     if isinstance(arr, torch.Tensor):
