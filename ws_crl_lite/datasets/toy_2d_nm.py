@@ -5,12 +5,15 @@ import torch
 from torch.distributions import Normal
 from torch.utils.data import Dataset
 
-from ws_crl.transforms import make_scalar_transform
+from ws_crl.transforms import make_scalar_transform  # not ws_crl_lite !
 
 
-class Toy2dDataset(Dataset):
-    def __init__(self, num_samples):
+class Toy_2d_Nm_Dataset(Dataset):
+    def __init__(self, num_samples, intervset):
         self.num_samples = num_samples
+        self.intervset = intervset
+        self.markov = self.intervset.markov
+
         self.transform = make_scalar_transform(
             n_features=2, layers=5
         )  # ConditionalAffineScalarTransform()
@@ -28,6 +31,43 @@ class Toy2dDataset(Dataset):
         return self.data[idx]
 
     def generate(self):
+        z1s = [Normal(0.0, 1.0).sample_n(self.num_samples).squeeze()]
+        z2s = [Normal((0.3 * z1s[0]**2 - 0.6 * z1s[0]).squeeze(), 0.8**2).sample_n(1).squeeze()]
+
+        interventions = None
+
+        for m in range(1,self.markov, 1):
+            if interventions is None:
+                interventions = self.intervset.init(self.num_samples)
+            else:
+                interventions = self.interventions.pick(interventions)
+
+            z1 = torch.clone(z1s[m-1])
+            z2 = torch.clone(z2s[m-1])
+            for s in range(self.num_samples):
+                if interventions.self[s] == 0:
+                    continue
+
+
+
+
+
+
+
+
+
+
+        def gen_step(prev_data, interv_ids):
+            if prev_data is None:
+                assert interv_ids is None
+
+                z1 = Normal(0.0, 1.0).sample_n(self.num_samples).squeeze()
+                z2 = Normal((0.3 * z1 ** 2 - 0.6 * z1).squeeze(), 0.8 ** 2).sample_n(1).squeeze()
+                return z1, z2
+
+            for i in range(self.num_samples):
+
+
         z1 = Normal(0.0, 1.0).sample_n(self.num_samples).squeeze()
         z1_z1interv = Normal(0.0, 1.0).sample_n(self.num_samples).squeeze()
         z2 = Normal((0.3 * z1**2 - 0.6 * z1).squeeze(), 0.8**2).sample_n(1).squeeze()
