@@ -7,7 +7,6 @@ from torch.distributions import Normal
 from torch.utils.data import Dataset
 
 
-
 def maybe_detach(arr):
     if isinstance(arr, torch.Tensor):
         return arr.detach()
