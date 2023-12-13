@@ -1,3 +1,4 @@
+import dataclasses
 import functools
 
 import torch
@@ -64,9 +65,9 @@ def intervened_execution_order(G, intervened_nodes):
     return ret
 
 
+@functools.lru_cache
 def num_nodes(G):
     return len(G.nodes())
-
 
 def generate_one(interventions, G, links, unlinks):
     def sample_node(node_id, parent_data):

@@ -27,10 +27,13 @@ class WSCRLData:
 #self.intervention_ids = maybe_detach(self.intervention_ids)
 
 
+
 class WSCRLDataset(Dataset):
     def __init__(self, num_samples, timesteps, G, links, unlinks, intervset):
         self.num_samples = num_samples
         self.intervset = intervset
+
+
 
         self.latents, self.observations, self.interventions, self.intervention_ids = generate(num_samples, timesteps, G, links, unlinks, intervset)
 
@@ -119,13 +122,14 @@ def n_node_dataset(num_datasets, num_nodes_OR_generator, num_samples, timesteps,
             except:
                 return False
 
-        def gen_graph(_):
+        def gen_graph(i):
             def gen():
                 return nx.fast_gnp_random_graph(num_nodes_OR_generator, 0.7, directed=True)
 
             g = gen()
             while has_cycle(g):
                 g = gen()
+
             return g
         generator = gen_graph
     else:
