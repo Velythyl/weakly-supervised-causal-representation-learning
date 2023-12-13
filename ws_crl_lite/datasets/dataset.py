@@ -5,10 +5,11 @@ import numpy as np
 
 import networkx as nx
 import torch
+from networkx import NetworkXNoCycle
 from torch.distributions import Normal
 from torch.utils.data import Dataset
 
-from ws_crl_lite.datasets.generate_for_graph import generate, node_to_index
+from ws_crl_lite.datasets.generate_for_graph import generate, node_to_index, roots
 from ws_crl_lite.datasets.intervset import IntervSet, IntervTable
 from ws_crl_minimal.encoder import FlowEncoder
 
@@ -29,13 +30,11 @@ class WSCRLData:
 
 
 class WSCRLDataset(Dataset):
-    def __init__(self, num_samples, timesteps, G, links, unlinks, intervset):
+    def __init__(self, num_samples, timesteps, G, links, unlinks, intervset, timestep_carryover=True):
         self.num_samples = num_samples
         self.intervset = intervset
 
-
-
-        self.latents, self.observations, self.interventions, self.intervention_ids = generate(num_samples, timesteps, G, links, unlinks, intervset)
+        self.latents, self.observations, self.interventions, self.intervention_ids = generate(num_samples, timesteps, G, links, unlinks, intervset, timestep_carryover=timestep_carryover)
 
         self.latents = maybe_detach(self.latents)
         self.observations = maybe_detach(self.observations)
@@ -58,15 +57,15 @@ class WSCRLDataset(Dataset):
         return self.observations[idx], self.latents[idx], self.intervention_ids[idx], self.interventions[idx]
 
 class AutomaticDataset(WSCRLDataset):
-    def __init__(self, num_samples, timesteps, markov, G):
+    def __init__(self, num_samples, timesteps, markov, G, timestep_carryover):
         try:
             nx.find_cycle(G)
             raise AssertionError("Graph can't have cycles")
-        except:
+        except NetworkXNoCycle:
             pass
 
         n2i = node_to_index(G)
-        starts = set([node for node in G.nodes if G.in_degree(node) == 0])
+        starts = roots(G)
         descendents = set(list(G.nodes)) - starts
         assert len(starts) != 0
 
@@ -111,7 +110,7 @@ class AutomaticDataset(WSCRLDataset):
         switch_case = IntervTable(dict_of_tables, dict_of_alphas)
         intervset.set_tables(switch_case)
 
-        super().__init__(num_samples, timesteps, G, links, unlinks, intervset)
+        super().__init__(num_samples, timesteps, G, links, unlinks, intervset, timestep_carryover)
 
 def n_node_dataset(num_datasets, num_nodes_OR_generator, num_samples, timesteps, markov):
     if isinstance(num_nodes_OR_generator, int):
@@ -138,7 +137,7 @@ def n_node_dataset(num_datasets, num_nodes_OR_generator, num_samples, timesteps,
     ret = []
     while len(ret) != num_datasets:
         graph = generator(len(ret))
-        ret += [ AutomaticDataset(num_samples, timesteps, markov, graph) ]
+        ret += [AutomaticDataset(num_samples, timesteps, markov, graph, timestep_carryover=False)]
     return ret
 
 
