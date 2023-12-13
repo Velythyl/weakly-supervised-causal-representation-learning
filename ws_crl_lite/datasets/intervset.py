@@ -1,7 +1,7 @@
 import dataclasses
 import numpy as np
 import torch
-
+import networkx as nx
 from itertools import chain, combinations
 
 def powerset(iterable):
@@ -80,8 +80,8 @@ class IntervTable:
         return maybe_squeeze(self.call(BATCH_SIZE, HISTORY_LENGTH, to_np(history)))
 
     def call(self, BATCH_SIZE, HISTORY_LENGTH, history):
-
         if HISTORY_LENGTH == 0:
+            # edge case: no history to condition on
             weights = self.dict_of_tables[0]
             sum = weights.sum()
             weights = weights / sum
@@ -119,12 +119,39 @@ class IntervSet:
 
         self.set_of_all_intervs = list(sorted(list(powerset(list(range(self.num_nodes))))))
         self.interv_ids = np.arange(len(self.set_of_all_intervs))
+        assert self.num_nodes == 1 + max(set([_a for sub in self.set_of_all_intervs for _a in sub]))
 
         self.switch_case = None
         self.set_tables(None)
 
     def id2interv(self, id):
         return self.set_of_all_intervs[id]
+
+    def n_m_onehots(self, batch_ids):
+        # (batch size, markov,)
+
+        # this messed up looking 3-for-loop piece of shit just builds one-hots
+        interventions = []
+        for s in range(batch_ids.shape[0]):
+            ret = []
+            for m in range(batch_ids.shape[1]):
+                vec = torch.zeros(self.num_nodes).int()
+                set_of_intervened_nodes = self.id2interv(batch_ids[s,m])
+                for n in set_of_intervened_nodes:
+                    vec[n] = 1
+                ret.append(vec)
+            interventions.append(torch.stack(ret))
+        interventions = torch.stack(interventions)
+        return interventions
+
+    def onehots_to_tuples(self, batch_onehots):
+        interventions = []
+        for s in range(batch_onehots.shape[0]):
+            sub = []
+            for m in range(batch_onehots.shape[1]):
+                sub.append(tuple(batch_onehots[s,m].nonzero().unique().cpu().numpy()))
+            interventions.append(sub)
+        return interventions
 
     @property
     def num_interv_ids(self):

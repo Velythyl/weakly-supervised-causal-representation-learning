@@ -2,32 +2,148 @@ import functools
 
 import torch
 from torch.distributions import Normal
+from tqdm import tqdm
 
 from ws_crl.encoder import FlowEncoder
 from ws_crl_lite.datasets.dataset import WSCRLDataset
 from ws_crl_lite.datasets.intervset import IntervSet, IntervTable
 
+def list_difference(list1, list2):
+    list2 = set(list2)
+    return [item for item in list1 if item not in list2]
+
+@functools.lru_cache
+def node_to_index(G):
+    nodes = list(G.nodes())
+    node_to_index = {node: index for index, node in enumerate(nodes)}
+    return node_to_index
+
+@functools.lru_cache
+def index_to_node(G):
+    nodes = list(G.nodes())
+    index_to_node = {index: node for index, node in enumerate(nodes)}
+    return index_to_node
+
+@functools.lru_cache
+def reachables(G, source_ids):
+    source_names = map(lambda i: index_to_node(G)[i], source_ids)
+
+    reachables = set()
+    for node in source_names:
+        reachable_from_node = set(nx.descendants(G, node))
+
+        reachables.update(reachable_from_node)
+        reachables.add(node)
+
+    return list(map(lambda i: node_to_index(G)[i], reachables))
+
+@functools.lru_cache
+def parents_dict(G):
+    n2i = node_to_index(G)
+
+    ret = {}
+    for n, i in n2i.items():
+        ret[i] = torch.tensor([n2i[parent] for parent in G.predecessors(n)]).int()
+    return ret
+
+@functools.lru_cache
+def execution_order(G):
+    return [node_to_index(G)[n] for n in nx.topological_sort(G)]
+
+@functools.lru_cache
+def intervened_execution_order(G, intervened_nodes):
+    ret = []
+    for i in execution_order(G):
+        if i in reachables(G, intervened_nodes):
+            ret += [i]
+    return ret
+
+def num_nodes(G):
+    return len(G.nodes())
+
+
+def generate_one(interventions, G, links, unlinks):
+    def sample_node(node_id, parent_data):
+        link = links[node_id]
+        ret = link(parent_data)
+        return ret
+
+    def sample_node_interv(node_id):
+        return unlinks[node_id]()
+
+    vec = torch.zeros(num_nodes(G))
+    for node in execution_order(G):
+        parents = parents_dict(G)[node]
+        if len(parents) >= 0:
+            parent_data = vec[parents]
+        else:
+            parent_data = None
+        vec[node] = sample_node(node, parent_data)
+
+    data = [vec]
+
+    for m in range(1, len(interventions)+1, 1):
+        data += [torch.clone(data[m-1])]
+
+        set_of_intervened_nodes = interventions[m-1]
+        if len(set_of_intervened_nodes) == 0:
+            continue
+
+        #ordered_affected_nodes = list_difference(self.execution_order, self.unreachables(set_of_intervened_nodes))
+        for node in intervened_execution_order(G, set_of_intervened_nodes):
+            if node in set_of_intervened_nodes:
+                val = sample_node_interv(node)
+            else:
+                val = sample_node(node, data[-1][parents_dict(G)[node]])
+
+            data[m][node] = val
+    return data
+
+def generate(num_samples, timesteps, G, links, unlinks, intervset):
+    links = {node_to_index(G)[k]: v for k, v in links.items()}
+    unlinks = {node_to_index(G)[k]: v for k, v in unlinks.items()}
+    num_nodes = len(G.nodes())
+
+    flow_encoder = FlowEncoder(
+        input_features=num_nodes,
+        output_features=num_nodes,
+        transform_blocks=5
+    )
+    
+    
+    ALL_INTERVENTIONS = [intervset.init(num_samples)]  # 1 is batch_size (here we are generating point-by-point, so it's 1
+    for m in range(timesteps):
+        ALL_INTERVENTIONS += [intervset.pick(ALL_INTERVENTIONS[-1])]
+    intervention_ids = torch.stack([i.self for i in ALL_INTERVENTIONS]).T
+    interventions = intervset.n_m_onehots(intervention_ids)
+
+    latents = []
+    observations = []
+    intervention_tuples = intervset.onehots_to_tuples(interventions)
+
+    for i in tqdm(range(num_samples)):
+        lat = generate_one(intervention_tuples[i], G, links, unlinks)
+        lat = torch.stack(lat)
+        observations.append(flow_encoder(lat)[0])
+        latents.append(lat)
+
+    latents = torch.stack(latents)
+    observations = torch.stack(observations)
+
+    return latents, observations, interventions, intervention_ids
+
+
 class ToyNDDataset(WSCRLDataset):
     def __init__(self, num_samples, G, links, unlinks, intervset):
-        adj_mat = nx.adjacency_matrix(G)
-        adj_mat = adj_mat.toarray()
-        self.adj_mat = torch.from_numpy(adj_mat)
         self.G = G
 
-        self.links = links
-        self.unlinks = unlinks
+        self.links = {node_to_index(G)[k]: v for k, v in links.items()}
+        self.unlinks = {node_to_index(G)[k]: v for k, v in unlinks.items()}
         self.intervset = intervset
 
-        nodes = list(G.nodes())
-        node_to_index = {node: index for index, node in enumerate(nodes)}
-        index_to_node = {index: node for index, node in enumerate(nodes)}
-        self.node_to_index = node_to_index
-        self.index_to_node = index_to_node
-
-        self.num_nodes = adj_mat.shape[0]
+        self.num_nodes = len(G.nodes())
         self.markov = intervset.markov
 
-        self.execution_order = [node_to_index[n] for n in nx.topological_sort(G)]
 
         ALL_INTERVENTIONS = [self.intervset.init(num_samples)] # 1 is batch_size (here we are generating point-by-point, so it's 1
         for m in range(self.markov-1):
@@ -35,20 +151,7 @@ class ToyNDDataset(WSCRLDataset):
                 self.intervset.pick(ALL_INTERVENTIONS[-1])
             )
         self.intervention_ids = torch.stack([i.self for i in ALL_INTERVENTIONS]).T
-
-        # this messed up looking 3-for-loop piece of shit just builds one-hots
-        interventions = []
-        for s in range(num_samples):
-            ret = []
-            for m in range(self.markov):
-                vec = torch.zeros(self.num_nodes).int()
-                set_of_intervened_nodes = self.intervset.id2interv(self.intervention_ids[s,m])
-                for n in set_of_intervened_nodes:
-                    vec[n] = 1
-                ret.append(vec)
-            interventions.append(torch.stack(ret))
-        interventions = torch.stack(interventions)
-        self.interventions = interventions
+        self.interventions = self.intervset.n_m_onehots(self.intervention_ids)
 
         self.flow_encoder = FlowEncoder(
             input_features=self.num_nodes,
@@ -58,42 +161,18 @@ class ToyNDDataset(WSCRLDataset):
 
         super().__init__(num_samples)
 
-
-    def children(self, id):
-        row = self.adj_mat[id].squeeze()
-        return row.nonzero()
-
-    def parents(self, id):
-        col = self.adj_mat[:,id].squeeze()
-        return col.nonzero()
-
-    def resolve_interv(self, interv):
-        # interv is set of ints (node ids) {i,j,k...}
-        interv_names = {self.index_to_node[i] for i in interv}
-        return interv_names
-
-    @functools.lru_cache
-    def unreachables(self, sources):
-        unreachables = set(range(self.num_nodes))  # assume all unreachable
-        for node in sources:
-            reachable_from_node = set([self.node_to_index[n] for n in nx.descendants(self.G, self.index_to_node[node])])
-            unreachables -= reachable_from_node
-            unreachables -= set([node])
-        return unreachables
-
     def gen_one(self, m_interv_sets):
         def sample_node(node_id, parent_data):
-            node_name = self.index_to_node[node_id]
-            link = self.links[node_name]
+            link = self.links[node_id]
             ret = link(parent_data)
             return ret
 
         def sample_node_interv(node_id):
-            return self.unlinks[self.index_to_node[node_id]]()
+            return self.unlinks[node_id]()
 
         vec = torch.zeros(self.num_nodes)
-        for node in self.execution_order:
-            parents = self.parents(node)
+        for node in execution_order(self.G):
+            parents = parents_dict(G)[node]
             if len(parents) >= 0:
                 parent_data = vec[parents]
             else:
@@ -106,18 +185,18 @@ class ToyNDDataset(WSCRLDataset):
             data += [torch.clone(data[m-1])]
 
             set_of_intervened_nodes = m_interv_sets[m-1]
-            if torch.sum(set_of_intervened_nodes) == 0:
-                continue    # no intervention
-            set_of_intervened_nodes = tuple(set_of_intervened_nodes.nonzero().unique().cpu().numpy())
+            if len(set_of_intervened_nodes) == 0:
+                continue
 
-            for node in self.execution_order:
-                if node in self.unreachables(set_of_intervened_nodes):
+            #ordered_affected_nodes = list_difference(self.execution_order, self.unreachables(set_of_intervened_nodes))
+            for node in intervened_execution_order(self.G, set_of_intervened_nodes):
+                if node not in reachables(self.G, set_of_intervened_nodes):
                     continue
 
                 if node in set_of_intervened_nodes:
                     val = sample_node_interv(node)
                 else:
-                    val = sample_node(node, data[-1][self.parents(node)])
+                    val = sample_node(node, data[-1][parents_dict(G)[node]])
 
                 data[m][node] = val
 
@@ -126,8 +205,11 @@ class ToyNDDataset(WSCRLDataset):
     def generate(self):
         latents = []
         observations = []
-        for i in range(self.num_samples):
-            lat = self.gen_one(self.interventions[i])
+
+        intervention_tuples = self.intervset.onehots_to_tuples(self.interventions)
+
+        for i in tqdm(range(self.num_samples)):
+            lat = self.gen_one(intervention_tuples[i])
             lat = torch.stack(lat)
             observations.append(self.flow_encoder(lat)[0])
             latents.append(lat)
@@ -184,8 +266,12 @@ if __name__ == "__main__":
         'C': lambda: Normal(-0.3, 1.0).sample()
     }
 
+
+    generate(1000, 2, G, links, unlinks, intervset=x)
+
     # PASS THE GRAPH, THE LINKS, THE UNLINKS, AND THE INTERVSET
-    dataset = ToyNDDataset(100, G, links, unlinks, intervset=x)
+    from dataset2 import WSCRLDataset
+    dataset = WSCRLDataset(1000, 2, G, links, unlinks, intervset=x)
 
 
     # To access a single sample
