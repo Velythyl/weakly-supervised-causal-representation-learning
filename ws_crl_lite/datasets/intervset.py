@@ -1,6 +1,7 @@
 import dataclasses
 import numpy as np
 import torch
+import networkx as nx
 
 from itertools import chain, combinations
 

@@ -1,4 +1,5 @@
 import functools
+import pickle
 
 import torch
 from torch.distributions import Normal
@@ -6,6 +7,7 @@ from torch.distributions import Normal
 from ws_crl.encoder import FlowEncoder
 from ws_crl_lite.datasets.dataset import WSCRLDataset
 from ws_crl_lite.datasets.intervset import IntervSet, IntervTable
+
 
 class ToyNDDataset(WSCRLDataset):
     def __init__(self, num_samples, G, links, unlinks, intervset):
@@ -135,11 +137,25 @@ class ToyNDDataset(WSCRLDataset):
         latents = torch.stack(latents)
         observations = torch.stack(observations)
 
-        return latents, observations, self.interventions, self.intervention_ids
+        # return latents, observations, self.interventions, self.intervention_ids
+        return (
+            observations.detach(), 
+            latents.detach(), 
+            self.interventions.detach(), 
+            self.intervention_ids.detach()
+        )
 
 
 if __name__ == "__main__":
     import networkx as nx
+    import numpy as np
+
+    import matplotlib
+    import matplotlib.pyplot as plt
+    import matplotlib.cm as cm
+    from matplotlib.colors import Normalize
+
+    # matplotlib.use('TkAgg')
 
     # FIRST, CREATE A GRAPH
     G = nx.DiGraph()
@@ -150,7 +166,6 @@ if __name__ == "__main__":
     # COMPUTE THE SET OF INTERVENTIONS: THE INTERVSET
     x = IntervSet(G, 2)
     print(x.set_of_all_intervs)
-    import numpy as np
 
     # GIVEN THE PRINTED STATEMENT ABOVE, YOU CAN DEFINE YOUR TABLES.
     # (it's also easy to automate this using a forloop on the markov length)
@@ -158,7 +173,7 @@ if __name__ == "__main__":
         0: np.ones(x.num_interv_ids),
         1: np.random.uniform(0, 10, size=(x.num_interv_ids, x.num_interv_ids)),
         2: np.random.uniform(0, 10, size=(x.num_interv_ids, x.num_interv_ids))
-    }
+    }  # TODO: normalize
     dict_of_alphas = {
         0: [1],
         1: [1],
@@ -185,21 +200,15 @@ if __name__ == "__main__":
     }
 
     # PASS THE GRAPH, THE LINKS, THE UNLINKS, AND THE INTERVSET
-    dataset = ToyNDDataset(100, G, links, unlinks, intervset=x)
-
+    dataset = ToyNDDataset(3000, G, links, unlinks, intervset=x)
 
     # To access a single sample
     sample = dataset[0]
-    import matplotlib
-    matplotlib.use('TkAgg')
-    import matplotlib.pyplot as plt
 
     def plot_3d(data):
         interventions = dataset.intervention_ids
         min_interv = interventions[interventions != 0].min()
         max_interv = interventions[interventions != 0].max()
-        import matplotlib.cm as cm
-        from matplotlib.colors import Normalize
 
         cmap = cm.viridis
         norm = Normalize(vmin=min_interv, vmax=max_interv)
@@ -254,6 +263,15 @@ if __name__ == "__main__":
         if dataset.markov == 2:
             plot_intervs(data[:,1:,:], dataset.intervention_ids[:,1].squeeze())
         plt.show()
+
+    # jank city
+    # just use binary label instead, easier to interpret for nowwww
+    data = dataset.generate()
+    intervention_labels = np.packbits(data[2], bitorder='big', axis=2) >> (8 - data[2].shape[2])
+    torch.save((*data[:3], intervention_labels.squeeze()), "nd_toy_dataset.pt")
+    with open("nd_toy_dataset_graph.pkl", "wb") as f:
+        pickle.dump(dataset.G, f)
+
     plot_3d(dataset.latents)
     plot_3d(dataset.observations)
     #do_plot(dataset.latents, dataset.intervention_ids.squeeze(), "black")
