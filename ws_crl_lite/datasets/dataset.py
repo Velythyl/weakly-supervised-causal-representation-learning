@@ -81,8 +81,6 @@ class AutomaticDataset(WSCRLDataset):
                 )
 
                 def descendant_link(parents):
-                    bla = n_parents
-
                     flow = flow_encoder(parents[None])[0]
 
                     if n2i[node] % 2 == 0:
