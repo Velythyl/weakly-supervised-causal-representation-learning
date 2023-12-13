@@ -1,12 +1,9 @@
 import functools
 
 import torch
-from torch.distributions import Normal
 from tqdm import tqdm
 
 from ws_crl.encoder import FlowEncoder
-from ws_crl_lite.datasets.dataset import WSCRLDataset
-from ws_crl_lite.datasets.intervset import IntervSet, IntervTable
 import networkx as nx
 
 

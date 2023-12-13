@@ -121,7 +121,7 @@ def n_node_dataset(num_datasets, num_nodes_OR_generator, num_samples, timesteps,
             except:
                 return False
 
-        def gen_graph():
+        def gen_graph(_):
             def gen():
                 return nx.fast_gnp_random_graph(num_nodes_OR_generator, 0.7, directed=True)
 
@@ -135,7 +135,7 @@ def n_node_dataset(num_datasets, num_nodes_OR_generator, num_samples, timesteps,
 
     ret = []
     while len(ret) != num_datasets:
-        graph = generator()
+        graph = generator(len(ret))
         ret += [ AutomaticDataset(num_samples, timesteps, markov, graph) ]
     return ret
 
