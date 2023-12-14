@@ -1,5 +1,12 @@
 import functools
 import pickle
+import networkx as nx
+import numpy as np
+import fire 
+
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+from matplotlib.colors import Normalize
 
 import torch
 from torch.distributions import Normal
@@ -146,15 +153,7 @@ class ToyNDDataset(WSCRLDataset):
         )
 
 
-if __name__ == "__main__":
-    import networkx as nx
-    import numpy as np
-
-    import matplotlib
-    import matplotlib.pyplot as plt
-    import matplotlib.cm as cm
-    from matplotlib.colors import Normalize
-
+def jank_main(data_file: str = "nd_toy_dataset.pt", graph_file: str = "nd_toy_dataset_graph.pkl"):
     # matplotlib.use('TkAgg')
 
     # FIRST, CREATE A GRAPH
@@ -268,12 +267,14 @@ if __name__ == "__main__":
     # just use binary label instead, easier to interpret for nowwww
     data = dataset.generate()
     intervention_labels = np.packbits(data[2], bitorder='big', axis=2) >> (8 - data[2].shape[2])
-    torch.save((*data[:3], intervention_labels.squeeze()), "nd_toy_dataset.pt")
-    with open("nd_toy_dataset_graph.pkl", "wb") as f:
+    torch.save((*data[:3], intervention_labels.squeeze()), data_file)
+    with open(graph_file, "wb") as f:
         pickle.dump(dataset.G, f)
 
     plot_3d(dataset.latents)
     plot_3d(dataset.observations)
     #do_plot(dataset.latents, dataset.intervention_ids.squeeze(), "black")
     #do_plot(dataset.observations, dataset.intervention_ids)
-    exit()
+
+if __name__ == "__main__":
+    fire.Fire(jank_main)

@@ -10,6 +10,10 @@ import networkx as nx
 import torch
 from torch import Tensor
 
+import io
+from PIL import Image
+import matplotlib.pyplot as plt
+
 import plotly.express as px
 import plotly.graph_objects as go
 import dash
@@ -90,6 +94,19 @@ class NDDataset(torch.utils.data.Dataset):
             G = pickle.load(open(graph_file, "rb"))
         
         return cls(*raw_data, graph=G)
+    
+    def graph_img(self):
+        if self.graph is None:
+            logger.info("No graph detected - no DAG will be shown")
+            return None
+
+        logger.info("Printing graph structure...")
+        fig, ax = plt.subplots()
+        nx.draw(self.graph, ax=ax)
+        img_buf = io.BytesIO()
+        plt.savefig(img_buf, format='png')
+        im = Image.open(img_buf)
+        return im
 
 
 def run_app(
@@ -144,8 +161,8 @@ def run_app(
                 z=[0.0],
                 mode='markers',
                 marker=dict(
-                    symbol='circle-open',
-                    size=2,
+                    symbol='circle',
+                    size=3,
                     color='red',
                     opacity=0.8,
                 ),
@@ -157,7 +174,7 @@ def run_app(
                 z=[0.0],
                 mode='markers',
                 marker=dict(
-                    symbol='square-open',
+                    symbol='square',
                     size=3,
                     color='green',
                     opacity=1,
@@ -180,8 +197,8 @@ def run_app(
         ],
         layout = go.Layout(
             title="Latent Variables Z",
-            width=900,
-            height=900
+            width=1200,
+            height=1200
         )
     )
 
@@ -191,15 +208,21 @@ def run_app(
         dash.dcc.Input(id='input1', value="111", type='text', placeholder='Intervention (e.g 110)'),
         dash.dcc.Input(id='input2', value="111", type='text', placeholder='Intervention (e.g 000)'),
         dash.html.Button('Update data', id='update-data', n_clicks=0),
+        dash.html.Button('Reset lines', id='reset', n_clicks=0),
         dash.html.Button('Dump cached', id='dump-cache', n_clicks=0),
 
         dash.html.Div(id="where",),
 
         dash.dcc.Graph(id="3dgraph", figure=fig),
 
+        dash.html.Div(id="meh"),
+
+        dash.html.Img(src=dataset.graph_img()),
+
         # dcc.Store stores the intermediate value
 
         dash.dcc.Store(id='garbage'),
+        dash.dcc.Store(id='lines'),
         dash.dcc.Store(id='selected-idx'),
         dash.dcc.Store(id='z1'),
         dash.dcc.Store(id='z2'),
@@ -214,10 +237,11 @@ def run_app(
         Output("z2", "data"),
         Output("z3", "data"),
         Input('update-data', 'n_clicks'),
+        Input('lines', 'data'),
         State("input1", "value"),
         State("input2", "value"),
     )
-    def update_graph(clicks, input1, input2):
+    def update_graph(clicks, lines, input1, input2):
         def _parse_inputs(input):
             if input == '' or input is None:
                 return None
@@ -242,34 +266,22 @@ def run_app(
 
         x1, x2, x3, z1, z2, z3, i_1h_1, i_1h_2, i_label_1, i_label_2 = dataset[selected]
 
-        logger.debug(f"Interventions\nTimestep 1:\n{i_1h_1}\nTimestep 2:\n{i_1h_2}")
+        logger.debug(f"Interventions timestep 1: {i_1h_1[0]} - {torch.all(i_1h_1==i_1h_1[0])}")
+        logger.debug(f"Interventions timestep 2: {i_1h_2[0]} - {torch.all(i_1h_2==i_1h_2[0])}")
         logger.debug(f"Sizes: z1 - {len(z1)}\tz2 - {len(z2)}\tz3 - {len(z3)}")
+
+        # Remove any extra traces (lines)
+        fig.data = fig.data[:3]
 
         # Update the data of the 3D graph
         all_z = [z1, z2, z3]
+
         for f, z in zip(fig.data[:3], all_z):
             f.x = z[:, 0]
             f.y = z[:, 1]
             f.z = z[:, 2]
 
-        # Remove any extra traces (lines)
-        # del fig.data[3:]
-        # logger.info(fig.data.)
-
-        # Add lines
-        lines = [go.Scatter3d(
-            x=[_z1[0], _z2[0], _z3[0]],
-            y=[_z1[1], _z2[1], _z3[1]],
-            z=[_z1[2], _z2[2], _z3[2]],
-            mode='lines',
-            line=dict(
-                color='rgb(255, 0, 0)',
-                width=2
-            ),
-            name=i
-        ) for i, (_z1, _z2, _z3) in enumerate(zip(*all_z))]
         fig.add_traces(lines)
-
         return fig, selected, z1, z2, z3
         
 
@@ -280,43 +292,79 @@ def run_app(
         State("z1", "data"),
         State("z2", "data"),
         State("z3", "data"),
+        State("lines", "data"),
     )
-    def dump_cached(click, selected, z1, z2, z3):
+    def dump_cached(click, selected, z1, z2, z3, lines):
+        """Debug dump of cached data"""
         logging.debug("Dumping cached data:")
         if selected is not None:
             logging.debug(f"Selected:\n{selected}\n")
             logging.debug(f"z1:\n{torch.tensor(z1).round(decimals=1)}\n")
             logging.debug(f"z2:\n{torch.tensor(z2).round(decimals=1)}\n")
             logging.debug(f"z3:\n{torch.tensor(z3).round(decimals=1)}")
+            logging.debug(f"lines:\n{lines}")
         return np.array([])
-
+    
 
     @app.callback(
         Output("where", "children"),
+        Output("lines", "data"),
         Input("3dgraph", "clickData"),
+        Input("reset", "n_clicks"),
+        State("lines", "data"),
+        State("selected-idx", "data"),
+        State("z1", "data"),
+        State("z2", "data"),
+        State("z3", "data"),
     )
-    def click(clickData):
+    def click(clickData, reset_clicks, lines, selected, z1, z2, z3):
+        """Add a line for the points clicked"""
+
+        if dash.ctx.triggered_id == "reset":
+            return "Resetting graph...", []
+
         if not clickData:
             raise dash.exceptions.PreventUpdate
+
         # Get the index of the clicked point
         logger.debug(clickData)
         idx = clickData["points"][0]["pointNumber"]
         logger.debug(f"Clicked index: {idx}")
-        # Get the other two points of the same index
-        # points = dataset[idx]  # replace with the correct method to get the points
-        # Draw lines to these points
-        # lines = [go.Scatter3d(
-        #     x=[clickData["points"][0]["x"], point[0]],
-        #     y=[clickData["points"][0]["y"], point[1]],
-        #     z=[clickData["points"][0]["z"], point[2]],
-        #     mode='lines',
-        #     line=dict(
-        #         color='rgb(255, 0, 0)',
-        #         width=2
-        #     )
-        # ) for point in points]
-        # fig.add_traces(lines)
-        return json.dumps({k: clickData["points"][0][k] for k in ["x", "y", "z"]})
+
+        _z1, _z2, _z3 = z1[idx], z2[idx], z3[idx]
+
+        # Add line
+        line = [
+            go.Scatter3d(
+                x=[_z1[0], _z2[0]],
+                y=[_z1[1], _z2[1]],
+                z=[_z1[2], _z2[2]],
+                mode='lines',
+                line=dict(
+                    color='rgb(255, 0, 0)',
+                    width=1,
+                ),
+                name=idx
+            ),
+            go.Scatter3d(
+                x=[_z2[0], _z3[0]],
+                y=[_z2[1], _z3[1]],
+                z=[_z2[2], _z3[2]],
+                mode='lines',
+                line=dict(
+                    color='rgb(0, 0, 255)',
+                    width=1,
+                ),
+                name=idx
+            )
+        ]
+        dump = json.dumps({k: clickData["points"][0][k] for k in ["x", "y", "z"]})
+
+        if lines is None:
+            lines = []
+        lines.extend(line)
+
+        return dump, lines
 
     app.run_server(debug=True, host=host, port=port, dev_tools_hot_reload=True)
 
