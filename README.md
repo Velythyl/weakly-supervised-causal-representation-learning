@@ -4,6 +4,7 @@
 
 | Date | User | Changes |
 |------|------|---------|
+| 22.12.13 | David | added the `visualizations` dir for interactive viz of data gen by `ws_crl_lite/dataset/nd_toy.py` |
 | 22.12.08 | David | taking the original code and scrubbing everything not related to the ILCM experiments |
 
 
