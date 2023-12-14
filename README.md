@@ -1,8 +1,16 @@
 # PGM Group Project Extension
 
+### Changelog
+
+| Date | User | Changes |
+|------|------|---------|
+| 22.12.13 | David | added the `visualizations` dir for interactive viz of data gen by `ws_crl_lite/dataset/nd_toy.py` |
+| 22.12.08 | David | taking the original code and scrubbing everything not related to the ILCM experiments |
+
+
 ## Installation
 
-### Pre-installation if you're a loser
+**Pre-installation if you're a loser**
 
 Basically follow instructions on the [Mila docs](https://docs.mila.quebec/Userguide.html#Mamba) (search for Mamba).
 Copy pasted here because I'm nice.
@@ -38,7 +46,7 @@ conda config --set solver libmamba
 ```
 
 
-### Environment setup
+**Environment setup**
 
 1. I used conda, glhf
 
@@ -58,9 +66,42 @@ conda activate weakly-supervised-causal
 experiments/scaling.py general.exp_name=dummy general.base_dir="./results_test/"  general.seed=42 data.dim_z=3 data.nature.seed=42 training=scaling_fast
 ```
 
+
+# Minimal Working WS CRL 
+
+All scrubbed code is in `*_minimal/` folders.
+More info TBD.
+
+### Tracking
+
+To start the mlflow server, run
+
+```bash
+mlflow server --host 0.0.0.0 --port 8080 --backend-store-uri sqlite:///mlflow.db
+```
+
+wherever the `mlflow.db` is stored (e.g. in the `run_*/` folders).
+You'll have to port forward on your personal computer, e.g. something like:
+
+```
+ssh -t -t mila -L 8080:localhost:8080 ssh <USER>@cn-g007 -L 8080:localhost:8080
+```
+
+and then open on your home machine: http://localhost:8080.
+
+&nbsp;
+&nbsp;
+&nbsp;
+&nbsp;
+
 ---
 
-# Weakly supervised causal representation learning
+&nbsp;
+&nbsp;
+&nbsp;
+&nbsp;
+
+# ORIGINAL README: Weakly supervised causal representation learning
 
 This repository contains the code for the paper [**Weakly supervised causal representation learning**](https://arxiv.org/abs/2203.16437) by Johann Brehmer, Pim de Haan, Phillip Lippe, and Taco Cohen, published at NeurIPS 2022.
 
