@@ -3,10 +3,6 @@ import dataclasses
 import numpy as np
 import torch
 import networkx as nx
-<<<<<<< HEAD
-
-=======
->>>>>>> bba2300f914ab9482b8b0af249f50438935574f9
 from itertools import chain, combinations
 
 def powerset(iterable):
@@ -158,7 +154,7 @@ class IntervSet:
         # always_dead is a vector that tells you which interv. always has P()=0, no matter the timestep
         return dead, always_dead
 
-    def kill(self, intervs_of_size=None, intervs_in_set=None):
+    def kill(self, intervs_of_size=None, intervs_in_set=None, nodes_in_intervs=None):
         if intervs_of_size is not None:
             # then it must be
             # 1. a length
@@ -167,14 +163,22 @@ class IntervSet:
             if isinstance(intervs_of_size, int):
                 intervs_of_size = {i: intervs_of_size for i in range(self.markov + 1)}
 
-            ret = {}
-            for m, size in intervs_of_size.items():
-                ids_to_kill = []
-                for i, nodelist in enumerate(self.set_of_all_intervs):
-                    if len(nodelist) == size:
-                        ids_to_kill.append(i)
-                ret[m] = ids_to_kill
-            intervs_of_size = ret
+            by_size = np.array([len(_set) for _set in self.set_of_all_intervs])
+            intervs_of_size = {m: (by_size == size).nonzero()[0].tolist() for m, size in intervs_of_size.items()}
+        else:
+            intervs_of_size = {}
+
+        if nodes_in_intervs is not None:
+            # 1. a list of intervened nodes. E.g. [(1,2), (), (0,2)]
+            # 2. a dict of for timesteps, (m) -> [(1,2),(),(0,2)]
+            if isinstance(nodes_in_intervs, dict):
+                pass
+            else:
+                nodes_in_intervs = {i: nodes_in_intervs for i in range(self.markov+1)}
+
+            nodes_in_intervs = {k: [self.set_of_all_intervs.index(tuple(sorted(_v))) for _v in v] for k, v in nodes_in_intervs.items()}
+        else:
+            nodes_in_intervs = {}
 
         if intervs_in_set is not None:
             # if it is not None, then it must be:
@@ -188,22 +192,23 @@ class IntervSet:
         elif intervs_in_set is None:
             intervs_in_set = {}
 
-        if intervs_of_size is not None:
-            def merge_dict(d1, d2):
-                ret = {}
-                done_keys = set()
-                for k, v in d1.items():
-                    if k in d2:
-                        ret[k] = v + d2[k]
-                    else:
-                        ret[k] = v
-                    done_keys.add(k)
-                for k, v in d2.items():
-                    if k in done_keys:
-                        continue
+        def merge_dict(d1, d2):
+            ret = {}
+            done_keys = set()
+            for k, v in d1.items():
+                if k in d2:
+                    ret[k] = v + d2[k]
+                else:
                     ret[k] = v
-                return ret
-            intervs_in_set = merge_dict(intervs_in_set, intervs_of_size)
+                done_keys.add(k)
+            for k, v in d2.items():
+                if k in done_keys:
+                    continue
+                ret[k] = v
+            return ret
+
+        intervs_in_set = merge_dict(intervs_in_set, intervs_of_size)
+        intervs_in_set = merge_dict(intervs_in_set, nodes_in_intervs)
 
         dico = copy.deepcopy(self.probability_tables.dict_of_tables)
         for m, list_of_nodes in intervs_in_set.items():

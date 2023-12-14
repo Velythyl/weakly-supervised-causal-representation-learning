@@ -179,7 +179,7 @@ if __name__ == "__main__":
 
         x.set_tables(switch_case)
         x.kill(intervs_of_size=2, intervs_in_set={1:[3], 2: [1]})
-
+        x.kill(nodes_in_intervs=[(1,2)])
         temp = x.impossible_intervention_ids
 
         # DEFINE THE RELATIONSHIP OF EACH NODE TO ITS PARENT
