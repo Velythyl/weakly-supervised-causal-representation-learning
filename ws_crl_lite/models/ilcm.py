@@ -3,8 +3,9 @@ from torch import nn
 from torchvision.ops import MLP
 from torch.distributions import Normal, OneHotCategorical
 
-from ws_crl_lite.utils import ConditionalAffineScalarTransform
 
+from ws_crl.utils import clean_and_clamp
+from ws_crl.transforms import make_mlp_structure_transform
 
 class ILCMEncoder(nn.Module):
 
@@ -63,37 +64,30 @@ class ILCMDecoder(nn.Module):
         super().__init__()
         self.dim_z = dim_z
         self.noise_decoder = noise_decoder
-
-        self.adjacency_matrix = nn.Parameter(torch.zeros((dim_z, dim_z)), requires_grad=True)
-
-        self.params_nets = nn.ModuleList([nn.Sequential(
-                    nn.Linear(dim_z, 5), 
-                    nn.ReLU(),
-                    nn.Linear(5, 5),
-                    nn.ReLU(),
-                    nn.Linear(5, dim_z),
+        self.solution_fns = nn.ModuleList([make_mlp_structure_transform(
+                    self.dim_z,
+                    hidden_layers=2,
+                    hidden_units=64,
+                    homoskedastic=False,
+                    min_std=0.2,
+                    initialization="broad",
+                    concat_masks_to_parents=False
                 ) for _ in range(self.dim_z)])
 
-        self.solution_fns = [ConditionalAffineScalarTransform(self.params_nets[i]) for i in range(dim_z)]
-
-    def parents(self, child_idx):
-        a = torch.sigmoid(torch.triu(self.adjacency_matrix.clone(), diagonal=1))
-        mask = torch.concat((a[:child_idx, child_idx], torch.zeros(1), (1 - a[child_idx, child_idx + 1:])))
-        return mask
-
     def forward(self, e1, e2, intervention):
-        log_p_e1 = Normal(0, 1).log_prob(e1).sum()
+        log_p_e1 = clean_and_clamp(Normal(0, 1).log_prob(e1)).sum()
         log_p_I = -torch.log(torch.tensor(self.dim_z + 1)) * e1.shape[0]
 
         i_mask = intervention[:, 1:].bool()
         log_p_e2 = 0
         for i in range(self.dim_z):
             if i_mask[:, i].any():
-                z, logdet = self.solution_fns[i].inverse(e2[:, i], context=self.parents(i) * e1)
-                log_p_e2 += Normal(0, 1).log_prob(z).sum() + logdet.sum()
+                context = e1.clone()
+                context[:, i] = 0
+                z, logdet = self.solution_fns[i].inverse(e2[:, i : i + 1], context)
+                log_p_e2 += (Normal(0, 1).log_prob(clean_and_clamp(z)) + logdet).sum()
 
         log_p = log_p_e1 + log_p_e2 + log_p_I
         x1_hat, x2_hat = self.noise_decoder(e1), self.noise_decoder(e2)
         
         return (x1_hat, x2_hat), log_p
-
