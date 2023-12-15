@@ -19,14 +19,11 @@ def maybe_detach(arr):
         return arr.detach()
     return arr
 
+
 @dataclasses.dataclass
 class WSCRLData:
     latents: torch.Tensor
     observations: torch.Tensor
-#self.interventions = maybe_detach(self.interventions)
-## todo change this to a one-hot
-#self.intervention_ids = maybe_detach(self.intervention_ids)
-
 
 
 class WSCRLDataset(Dataset):
@@ -34,7 +31,9 @@ class WSCRLDataset(Dataset):
         self.num_samples = num_samples
         self.intervset = intervset
 
-        self.latents, self.observations, self.interventions, self.intervention_ids = generate(num_samples, timesteps, G, links, unlinks, intervset, timestep_carryover=timestep_carryover)
+        self.latents, self.observations, self.interventions, self.intervention_ids = generate(num_samples, timesteps, G,
+                                                                                              links, unlinks, intervset,
+                                                                                              timestep_carryover=timestep_carryover)
 
         self.latents = maybe_detach(self.latents)
         self.observations = maybe_detach(self.observations)
@@ -56,6 +55,7 @@ class WSCRLDataset(Dataset):
     def __getitem__(self, idx):
         return self.observations[idx], self.latents[idx], self.intervention_ids[idx], self.interventions[idx]
 
+
 class AutomaticDataset(WSCRLDataset):
     def __init__(self, num_samples, timesteps, markov, G, timestep_carryover):
         try:
@@ -75,6 +75,7 @@ class AutomaticDataset(WSCRLDataset):
         for node in descendents:
             # find number of parents
             n_parents = len(list(G.predecessors(node)))
+
             def make_link():
                 flow_encoder = FlowEncoder(
                     input_features=n_parents,
@@ -91,26 +92,29 @@ class AutomaticDataset(WSCRLDataset):
                         flow = flow.sum()
 
                     return Normal(0.0, 1.0).sample() + flow
+
                 return descendant_link
 
             links[node] = make_link()
-            unlinks[node] = lambda: Normal(0.1*n2i[node], 1.0).sample()
+            unlinks[node] = lambda: Normal(0.1 * n2i[node], 1.0).sample()
 
         intervset = IntervSet(G, markov)
 
         def random_uniform(is_vec):
-            return np.random.uniform(0, 10, size=(intervset.num_interv_ids,) if is_vec else (intervset.num_interv_ids, intervset.num_interv_ids))
+            return np.random.uniform(0, 10, size=(intervset.num_interv_ids,) if is_vec else (
+            intervset.num_interv_ids, intervset.num_interv_ids))
 
-        dict_of_tables = {i: random_uniform(False) for i in range(markov+1)}
+        dict_of_tables = {i: random_uniform(False) for i in range(markov + 1)}
         dict_of_tables[0] = random_uniform(True)
 
-        dict_of_alphas = {i: np.random.uniform(0,1, size=(i if i > 1 else 1)) for i in range(markov+1)}
+        alpha_vec = np.random.uniform(0.1, 1, size=(markov+1))
 
         # PASS THE TABLE AND ALPHAS TO THE INTERVSET CALCULATOR
-        switch_case = IntervTable(dict_of_tables, dict_of_alphas)
+        switch_case = IntervTable(dict_of_tables, alpha_vec)
         intervset.set_tables(switch_case)
 
         super().__init__(num_samples, timesteps, G, links, unlinks, intervset, timestep_carryover)
+
 
 def n_node_dataset(num_datasets, num_nodes_OR_generator, num_samples, timesteps, markov):
     if isinstance(num_nodes_OR_generator, int):
@@ -130,6 +134,7 @@ def n_node_dataset(num_datasets, num_nodes_OR_generator, num_samples, timesteps,
                 g = gen()
 
             return g
+
         generator = gen_graph
     else:
         generator = num_nodes_OR_generator
@@ -141,7 +146,6 @@ def n_node_dataset(num_datasets, num_nodes_OR_generator, num_samples, timesteps,
     return ret
 
 
-
 if __name__ == "__main__":
     import networkx as nx
 
@@ -151,13 +155,14 @@ if __name__ == "__main__":
     edges = [('A', 'B'), ('B', 'C'), ('A', 'C')]
     G.add_edges_from(edges)
 
-    AUTO = True
+    AUTO = False
     if AUTO:
-        dataset = n_node_dataset(4, 3, num_samples=1000, timesteps=2, markov=2)[0] #  AutomaticDataset(1000, 6, 2, G)
+        dataset = n_node_dataset(1, 3, num_samples=50, timesteps=2, markov=2)[0]  # AutomaticDataset(1000, 6, 2, G)
     else:
         # COMPUTE THE SET OF INTERVENTIONS: THE INTERVSET
         x = IntervSet(G, 2)
         print(x.set_of_all_intervs)
+
         import numpy as np
 
         # GIVEN THE PRINTED STATEMENT ABOVE, YOU CAN DEFINE YOUR TABLES.
@@ -167,14 +172,15 @@ if __name__ == "__main__":
             1: np.random.uniform(0, 10, size=(x.num_interv_ids, x.num_interv_ids)),
             2: np.random.uniform(0, 10, size=(x.num_interv_ids, x.num_interv_ids))
         }
-        dict_of_alphas = {
-            0: [1],
-            1: [1],
-            2: [0.5, 1]
-        }
+        alpha_vec = np.random.uniform(0.1,1, size=(3,))
+        # fixme
         # PASS THE TABLE AND ALPHAS TO THE INTERVSET CALCULATOR
-        switch_case = IntervTable(dict_of_tables, dict_of_alphas)
+        switch_case = IntervTable(dict_of_tables, alpha_vec)
+
         x.set_tables(switch_case)
+        x.kill(intervs_of_size=2, intervs_in_set={1:[3], 2: [1]})
+
+        temp = x.impossible_intervention_ids
 
         # DEFINE THE RELATIONSHIP OF EACH NODE TO ITS PARENT
         # (to automate this, just an affine transform given the parents)
@@ -194,12 +200,13 @@ if __name__ == "__main__":
 
         dataset = WSCRLDataset(1000, 2, G, links, unlinks, intervset=x)
 
-
     # To access a single sample
     sample = dataset[0]
     import matplotlib
+
     matplotlib.use('TkAgg')
     import matplotlib.pyplot as plt
+
 
     def plot_3d(data):
         interventions = dataset.intervention_ids
@@ -220,7 +227,7 @@ if __name__ == "__main__":
             2: "blue",
         }
         for i in range(data.shape[1]):
-            ar = data[:,i]
+            ar = data[:, i]
             ax.scatter(ar[:, 0], ar[:, 1], ar[:, 2], color=color[i])
 
         def plot_many_arrows(pairs, color):
@@ -246,7 +253,7 @@ if __name__ == "__main__":
             for i in interventions.unique():
                 if i == 0:
                     continue
-                #if i not in list(range(dataset.num_nodes+1)): # skips intervs on more than one node
+                # if i not in list(range(dataset.num_nodes+1)): # skips intervs on more than one node
                 #    continue
 
                 # opt to select the first elements. doesn't change anything anyway.
@@ -257,13 +264,14 @@ if __name__ == "__main__":
                 sel_latents = data[selected_intervs]
                 plot_many_arrows(sel_latents, color=cmap(norm(i)))
 
-        plot_intervs(data[:,:2,:], dataset.intervention_ids[:,0].squeeze())
+        plot_intervs(data[:, :2, :], dataset.intervention_ids[:, 0].squeeze())
         if dataset.markov == 2:
-            plot_intervs(data[:,1:,:], dataset.intervention_ids[:,1].squeeze())
+            plot_intervs(data[:, 1:, :], dataset.intervention_ids[:, 1].squeeze())
         plt.show()
+
+
     plot_3d(dataset.latents)
     plot_3d(dataset.observations)
-    #do_plot(dataset.latents, dataset.intervention_ids.squeeze(), "black")
-    #do_plot(dataset.observations, dataset.intervention_ids)
+    # do_plot(dataset.latents, dataset.intervention_ids.squeeze(), "black")
+    # do_plot(dataset.observations, dataset.intervention_ids)
     exit()
-

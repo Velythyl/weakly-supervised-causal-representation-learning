@@ -1,3 +1,4 @@
+import copy
 import dataclasses
 import numpy as np
 import torch
@@ -39,7 +40,7 @@ def to_np(arr):
     return arr.detach().cpu().numpy().astype(int)
 
 class IntervTable:
-    def __init__(self, dict_of_tables, dict_of_alphas):
+    def __init__(self, dict_of_tables, alpha_vec):
         super().__init__()
         self.dict_of_tables = dict_of_tables
         # {
@@ -48,7 +49,7 @@ class IntervTable:
         #   2: (num_intervs, num_intervs) # chosen at order 2
         #   ...
         # }
-        self.dict_of_alphas = dict_of_alphas
+        self.alpha_vec = alpha_vec
         # {
         #   0: 1    # never used
         #   1: 1    # used, but useless (tragic)
@@ -64,6 +65,12 @@ class IntervTable:
         for m in range(1,markov+1,1):
             dict_of_tables[m] = np.ones((num_intervs, num_intervs))
             dict_of_alphas[m] = 1.
+
+    @property
+    def markov(self):
+        markov = max(list(self.dict_of_tables.keys()))
+        return markov
+
 
     @property
     def num_interv_ids(self):
@@ -94,7 +101,7 @@ class IntervTable:
         final_weights = np.zeros((BATCH_SIZE, self.num_interv_ids))
         for i in range(HISTORY_LENGTH):
             weights_for_past = []
-            current_alpha = self.dict_of_alphas[HISTORY_LENGTH][i]
+            current_alpha = self.alpha_vec[i]
             for l in range(BATCH_SIZE):
                 past_node = history[l,i]
                 weights_for_past.append(self.dict_of_tables[i+1][past_node] * current_alpha)
@@ -125,8 +132,88 @@ class IntervSet:
         self.interv_ids = np.arange(len(self.set_of_all_intervs))
         assert self.num_nodes == 1 + max(set([_a for sub in self.set_of_all_intervs for _a in sub]))
 
-        self.switch_case = None
+        self.probability_tables = None
         self.set_tables(None)
+
+    @property
+    def impossible_intervention_ids(self):
+        dead = {m: np.zeros(len(self.set_of_all_intervs), dtype=int) for m in range(self.markov+1)}
+
+        dico = copy.deepcopy(self.probability_tables.dict_of_tables)
+        for m, prob_table in dico.items():
+            for i in self.interv_ids:
+                if m == 0:
+                    if prob_table[i] == 0:
+                        dead[m][i] = 1
+                else:
+                    if np.all(prob_table[:,i] == 0):
+                        dead[m][i] = 1
+
+        always_dead = np.zeros(len(self.set_of_all_intervs), dtype=int)
+        for k, v in dead.items():
+            always_dead += v
+        always_dead = always_dead == self.markov+1
+
+        # dead is a dict that tells you which interv. has P()=0 at each timestep
+        # always_dead is a vector that tells you which interv. always has P()=0, no matter the timestep
+        return dead, always_dead
+
+    def kill(self, intervs_of_size=None, intervs_in_set=None):
+        if intervs_of_size is not None:
+            # then it must be
+            # 1. a length
+            # 2. a dict: (m) -> (length)
+
+            if isinstance(intervs_of_size, int):
+                intervs_of_size = {i: intervs_of_size for i in range(self.markov + 1)}
+
+            ret = {}
+            for m, size in intervs_of_size.items():
+                ids_to_kill = []
+                for i, nodelist in enumerate(self.set_of_all_intervs):
+                    if len(nodelist) == size:
+                        ids_to_kill.append(i)
+                ret[m] = ids_to_kill
+            intervs_of_size = ret
+
+        if intervs_in_set is not None:
+            # if it is not None, then it must be:
+            # 1. a set of nodes
+            # 2. a dict: (m) -> (set of nodes)
+
+            if isinstance(intervs_in_set, dict):
+                pass
+            else:
+                intervs_in_set = {i: intervs_in_set for i in range(self.markov+1)}
+        elif intervs_in_set is None:
+            intervs_in_set = {}
+
+        if intervs_of_size is not None:
+            def merge_dict(d1, d2):
+                ret = {}
+                done_keys = set()
+                for k, v in d1.items():
+                    if k in d2:
+                        ret[k] = v + d2[k]
+                    else:
+                        ret[k] = v
+                    done_keys.add(k)
+                for k, v in d2.items():
+                    if k in done_keys:
+                        continue
+                    ret[k] = v
+                return ret
+            intervs_in_set = merge_dict(intervs_in_set, intervs_of_size)
+
+        dico = copy.deepcopy(self.probability_tables.dict_of_tables)
+        for m, list_of_nodes in intervs_in_set.items():
+            for n in list_of_nodes:
+                if m == 0:
+                    dico[m][n] = 0.0
+                else:
+                    dico[m][:,n] = 0.0
+
+        self.probability_tables.dict_of_tables = dico
 
     def id2interv(self, id):
         return self.set_of_all_intervs[id]
@@ -165,23 +252,21 @@ class IntervSet:
         if switch_case is None:
             # default to uniform
             switch_case = IntervTable.uniform(self.num_interv_ids, self.markov)
-        def tensorized(h):
-            return to_tensor(switch_case(h))
-        self.switch_case = tensorized
+        self.probability_tables = switch_case
 
     def init(self, batch_size):
-        if self.switch_case is None:
+        if self.probability_tables is None:
             raise Exception("how dare you")
 
-        return Interv(self.switch_case(batch_size), to_tensor(np.array([[]]*batch_size)))
+        return Interv(to_tensor(self.probability_tables(batch_size)), to_tensor(np.array([[]] * batch_size)))
 
     def pick(self, past_interv):
-        if self.switch_case is None:
+        if self.probability_tables is None:
             raise Exception("how dare you")
 
         history = past_interv.march_history(self.markov)
 
-        return Interv(self.switch_case(history), history)
+        return Interv(to_tensor(self.probability_tables(history)), history)
 
 
 if __name__ == "__main__":
