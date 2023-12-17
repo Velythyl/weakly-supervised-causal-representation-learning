@@ -78,14 +78,14 @@ class ILCMDecoder(nn.Module):
         log_p_e1 = clean_and_clamp(Normal(0, 1).log_prob(e1)).sum()
         log_p_I = -torch.log(torch.tensor(self.dim_z + 1)) * e1.shape[0]
 
-        i_mask = intervention[:, 1:].bool()
+        i_mask = intervention[:, 1:]
         log_p_e2 = 0
         for i in range(self.dim_z):
             if i_mask[:, i].any():
                 context = e1.clone()
                 context[:, i] = 0
                 z, logdet = self.solution_fns[i].inverse(e2[:, i : i + 1], context)
-                log_p_e2 += (Normal(0, 1).log_prob(clean_and_clamp(z)) + logdet).sum()
+                log_p_e2 += ((Normal(0, 1).log_prob(clean_and_clamp(z)) + logdet) * i_mask[:, i]).sum()
 
         log_p = log_p_e1 + log_p_e2 + log_p_I
         x1_hat, x2_hat = self.noise_decoder(e1), self.noise_decoder(e2)

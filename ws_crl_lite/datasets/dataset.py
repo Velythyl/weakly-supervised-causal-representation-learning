@@ -38,7 +38,9 @@ class WSCRLDataset(Dataset):
         self.intervset = intervset
         self.G = G
 
-        self.latents, self.observations, self.interventions, self.intervention_ids = generate(num_samples, timesteps, G, links, unlinks, intervset, timestep_carryover=timestep_carryover)
+        self.latents, self.observations, self.interventions, self.intervention_ids = generate(num_samples, timesteps, G,
+                                                                                              links, unlinks, intervset,
+                                                                                              timestep_carryover=timestep_carryover)
 
         self.latents = maybe_detach(self.latents)
         self.observations = maybe_detach(self.observations)
@@ -80,6 +82,7 @@ class AutomaticDataset(WSCRLDataset):
         for node in descendents:
             # find number of parents
             n_parents = len(list(G.predecessors(node)))
+
             def make_link():
                 flow_encoder = FlowEncoder(
                     input_features=n_parents,
@@ -96,23 +99,25 @@ class AutomaticDataset(WSCRLDataset):
                         flow = flow.sum()
 
                     return Normal(0.0, 1.0).sample() + flow
+
                 return descendant_link
 
             links[node] = make_link()
-            unlinks[node] = lambda: Normal(0.1*n2i[node], 1.0).sample()
+            unlinks[node] = lambda: Normal(0.1 * n2i[node], 1.0).sample()
 
         intervset = IntervSet(G, markov)
 
         def random_uniform(is_vec):
-            return np.random.uniform(0, 10, size=(intervset.num_interv_ids,) if is_vec else (intervset.num_interv_ids, intervset.num_interv_ids))
+            return np.random.uniform(0, 10, size=(intervset.num_interv_ids,) if is_vec else (
+            intervset.num_interv_ids, intervset.num_interv_ids))
 
-        dict_of_tables = {i: random_uniform(False) for i in range(markov+1)}
+        dict_of_tables = {i: random_uniform(False) for i in range(markov + 1)}
         dict_of_tables[0] = random_uniform(True)
 
-        dict_of_alphas = {i: np.random.uniform(0,1, size=(i if i > 1 else 1)) for i in range(markov+1)}
+        alpha_vec = np.random.uniform(0.1, 1, size=(markov+1))
 
         # PASS THE TABLE AND ALPHAS TO THE INTERVSET CALCULATOR
-        switch_case = IntervTable(dict_of_tables, dict_of_alphas)
+        switch_case = IntervTable(dict_of_tables, alpha_vec)
         intervset.set_tables(switch_case)
 
         super().__init__(num_samples, timesteps, G, links, unlinks, intervset, timestep_carryover)
@@ -136,6 +141,7 @@ def n_node_dataset(num_datasets, num_nodes_OR_generator, num_samples, timesteps,
                 g = gen()
 
             return g
+
         generator = gen_graph
     else:
         generator = num_nodes_OR_generator
@@ -173,14 +179,15 @@ def jank_main(
             1: np.random.uniform(0, 10, size=(x.num_interv_ids, x.num_interv_ids)),
             2: np.random.uniform(0, 10, size=(x.num_interv_ids, x.num_interv_ids))
         }
-        dict_of_alphas = {
-            0: [1],
-            1: [1],
-            2: [0.5, 1]
-        }
+        alpha_vec = np.random.uniform(0.1,1, size=(3,))
+        # fixme
         # PASS THE TABLE AND ALPHAS TO THE INTERVSET CALCULATOR
-        switch_case = IntervTable(dict_of_tables, dict_of_alphas)
+        switch_case = IntervTable(dict_of_tables, alpha_vec)
+
         x.set_tables(switch_case)
+        x.kill(intervs_of_size=2, intervs_in_set={1:[3], 2: [1]})
+
+        temp = x.impossible_intervention_ids
 
         # DEFINE THE RELATIONSHIP OF EACH NODE TO ITS PARENT
         # (to automate this, just an affine transform given the parents)
@@ -200,10 +207,8 @@ def jank_main(
 
         dataset = WSCRLDataset(n_samples, 2, G, links, unlinks, intervset=x)
 
-
     # To access a single sample
     sample = dataset[0]
-
 
     def plot_3d(data):
         interventions = dataset.intervention_ids
@@ -222,7 +227,7 @@ def jank_main(
             2: "blue",
         }
         for i in range(data.shape[1]):
-            ar = data[:,i]
+            ar = data[:, i]
             ax.scatter(ar[:, 0], ar[:, 1], ar[:, 2], color=color[i])
 
         def plot_many_arrows(pairs, color):
@@ -248,7 +253,7 @@ def jank_main(
             for i in interventions.unique():
                 if i == 0:
                     continue
-                #if i not in list(range(dataset.num_nodes+1)): # skips intervs on more than one node
+                # if i not in list(range(dataset.num_nodes+1)): # skips intervs on more than one node
                 #    continue
 
                 # opt to select the first elements. doesn't change anything anyway.
@@ -259,9 +264,9 @@ def jank_main(
                 sel_latents = data[selected_intervs]
                 plot_many_arrows(sel_latents, color=cmap(norm(i)))
 
-        plot_intervs(data[:,:2,:], dataset.intervention_ids[:,0].squeeze())
+        plot_intervs(data[:, :2, :], dataset.intervention_ids[:, 0].squeeze())
         if dataset.markov == 2:
-            plot_intervs(data[:,1:,:], dataset.intervention_ids[:,1].squeeze())
+            plot_intervs(data[:, 1:, :], dataset.intervention_ids[:, 1].squeeze())
         plt.show()
     
     data = dataset[:]
@@ -272,8 +277,8 @@ def jank_main(
 
     plot_3d(dataset.latents)
     plot_3d(dataset.observations)
-    #do_plot(dataset.latents, dataset.intervention_ids.squeeze(), "black")
-    #do_plot(dataset.observations, dataset.intervention_ids)
+    # do_plot(dataset.latents, dataset.intervention_ids.squeeze(), "black")
+    # do_plot(dataset.observations, dataset.intervention_ids)
     exit()
 
 
