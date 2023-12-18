@@ -9,12 +9,27 @@ from torchvision.transforms.functional import to_tensor
 import pytorch_lightning as L
 from pytorch_lightning.callbacks import LearningRateFinder
 
+import numpy as np
+import networkx as nx
 import matplotlib.pyplot as plt
 import seaborn as sns
 import io
+from PIL import Image
 
-from ws_crl_lite.datasets.nd_toy import ToyNDDataset 
+from ws_crl_lite.datasets.dataset import build_train_test_n_node_dataset
 from ws_crl_lite.models.ilcm import ILCMEncoder, ILCMDecoder
+
+
+def graph2img(G):
+    fig, ax = plt.subplots()
+    nx.draw(G, ax=ax)
+    plt.close(fig)
+    img_buf = io.BytesIO()
+    fig.savefig(img_buf, format='png')
+    img_buf.seek(0)
+    # image = (plt.imread(img_buf) * 255).astype(np.uint8)
+    image = torch.tensor(plt.imread(img_buf))
+    return image[:, :, :3].permute(2,0,1)
 
 
 class FineTuneLearningRateFinder(LearningRateFinder):
@@ -56,9 +71,13 @@ class ILCMLite(L.LightningModule):
         self.validation_step_outputs = []
 
     def training_step(self, batch, batch_idx):
+        # unpack
+        obs, latents, interv_ids, interv_onehot = batch
 
-        #TODO: make it work for sequences of longer than 2
-        x1, x2 = batch[:, 0], batch[:, 1]
+        x1, x2 = obs[:, 0], obs[:, 1]
+
+        # x1, x2 = batch[:, 0], batch[:, 1]
+        # (e1, e2, intervention), log_prob_posterior = self.encoder(x1, x2)
         (e1, e2, intervention), log_prob_posterior = self.encoder(x1, x2)
         (x1_hat, x2_hat), log_prob_prior = self.decoder(e1, e2, intervention)
         
@@ -72,8 +91,11 @@ class ILCMLite(L.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        x = batch[:, 0]
-        e, _ = self.encoder.noise_encoder(x).tensor_split(2, dim=-1)
+        # unpack batch
+        obs, latents, interv_ids, interv_onehot = batch
+
+        obs_1 = obs[:, 0, :]
+        e, _ = self.encoder.noise_encoder(obs_1).tensor_split(2, dim=-1)
         noise = e.detach()
         A = torch.empty(self.dim_z, self.dim_z)
         noise.requires_grad=True
@@ -107,11 +129,13 @@ class ILCMLite(L.LightningModule):
         image = to_tensor(plt.imread(buf))
 
         return image
+    
+
 
 
 if __name__ == '__main__':
     
-    seq_len, dim_z, dim_x = 2, 2, 2 
+    seq_len, dim_z, dim_x = 2, 3, 3
 
     noise_encoder = nn.Sequential(nn.Linear(dim_x, 3), nn.ReLU(), nn.Linear(3, dim_z * 2))
     noise_decoder = nn.Sequential(nn.Linear(dim_z, 3), nn.ReLU(), nn.Linear(3, dim_x))
@@ -120,13 +144,22 @@ if __name__ == '__main__':
     ilcm_decoder = ILCMDecoder(noise_decoder, dim_z)
     model = ILCMLite(ilcm_encoder, ilcm_decoder, dim_z=dim_z)
 
+    # dataset = ToyNDDataset(10000, G, links, unlinks, intervset=x)
+    # train_dataset = Toy2dDataset(10000)
+    # val_dataset = Toy2dDataset(5000)
+    train, val = build_train_test_n_node_dataset(
+        n_train=100,
+        n_test=50,
+        num_nodes_OR_generator=3,
+        timesteps=1,
+        markov=2,
+        seed=42
+    )
 
-    dataset = ToyNDDataset(10000, G, links, unlinks, intervset=x)
-
-    train_dataset = Toy2dDataset(10000)
-    val_dataset = Toy2dDataset(5000)
-    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=8)
-    val_loader =  DataLoader(val_dataset, batch_size=64, shuffle=False, num_workers=8)
+    train_loader = DataLoader(train, batch_size=64, shuffle=True, num_workers=8)
+    val_loader =  DataLoader(val, batch_size=64, shuffle=False, num_workers=8)
     
     trainer = L.Trainer(check_val_every_n_epoch=1, callbacks=[FineTuneLearningRateFinder(milestones=(5, 10))])
+    graph_img = graph2img(train.G)
+    trainer.logger.experiment.add_image("Graph", graph_img)
     trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=val_loader)

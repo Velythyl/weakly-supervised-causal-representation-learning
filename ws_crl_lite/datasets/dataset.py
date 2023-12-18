@@ -10,6 +10,7 @@ from torch.distributions import Normal
 from torch.utils.data import Dataset
 
 import matplotlib
+from typing import Type
 # matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -18,6 +19,58 @@ from matplotlib.colors import Normalize
 from ws_crl_lite.datasets.generate_for_graph import generate, node_to_index, roots
 from ws_crl_lite.datasets.intervset import IntervSet, IntervTable
 from ws_crl_minimal.encoder import FlowEncoder
+
+
+class DEFAULT_GRAPH:
+    def __init__(self):
+        # FIRST, CREATE A GRAPH
+        self.G = nx.DiGraph()
+
+        # Add edges to the graph
+        self.edges = [('A', 'B'), ('B', 'C'), ('A', 'C')]
+        self.G.add_edges_from(self.edges)
+
+        self.x = IntervSet(self.G, 2)
+
+        # GIVEN THE PRINTED STATEMENT ABOVE, YOU CAN DEFINE YOUR TABLES.
+        # (it's also easy to automate this using a forloop on the markov length)
+        self.dict_of_tables = {
+            0: np.ones(self.x.num_interv_ids),
+            1: np.random.uniform(0, 10, size=(self.x.num_interv_ids, self.x.num_interv_ids)),
+            2: np.random.uniform(0, 10, size=(self.x.num_interv_ids, self.x.num_interv_ids))
+        }
+        self.alpha_vec = np.random.uniform(0.1,1, size=(3,))
+        # fiself.xme
+        # PASS THE TABLE AND ALPHAS TO THE INTERVSET CALCULATOR
+        self.switch_case = IntervTable(self.dict_of_tables, self.alpha_vec)
+
+        self.x.set_tables(self.switch_case)
+        self.x.kill(intervs_of_size=2, intervs_in_set={1:[3], 2: [1]})
+
+        # DEFINE THE RELATIONSHIP OF EACH NODE TO ITS PARENT
+        # (to automate this, just an affine transform given the parents)
+        self.links = {
+            'A': lambda parents: Normal(0.0, 1.0).sample(),
+            'B': lambda parents: Normal(0.3 * parents[0] ** 2 - 0.6 * parents[0], 0.16).sample(),
+            'C': lambda parents: Normal(0.2 * parents[0] ** 2 + -0.8 * parents[1], 1.0).sample()
+        }
+
+        # DEFINE HOW THE NODES BEHAVE WHEN THEY GET INTERVENED ON
+        # (to automate this, just sample from a normal or something of the sort)
+        self.unlinks = {
+            'A': lambda: self.links['A'](None),
+            'B': lambda: Normal(0.4, 1.0).sample(),
+            'C': lambda: Normal(-0.3, 1.0).sample()
+        }
+    
+    def dataset_kwargs(self):
+        return {
+            "timesteps": 2,
+            "G": self.G,
+            "links": self.links,
+            "unlinks": self.unlinks,
+            "intervset": self.x
+        }
 
 
 def maybe_detach(arr):
@@ -38,9 +91,15 @@ class WSCRLDataset(Dataset):
         self.intervset = intervset
         self.G = G
 
-        self.latents, self.observations, self.interventions, self.intervention_ids = generate(num_samples, timesteps, G,
-                                                                                              links, unlinks, intervset,
-                                                                                              timestep_carryover=timestep_carryover)
+        self.latents, self.observations, self.interventions, self.intervention_ids = generate(
+            num_samples, 
+            timesteps, 
+            G,
+            links, 
+            unlinks, 
+            intervset,
+            timestep_carryover=timestep_carryover
+        )
 
         self.latents = maybe_detach(self.latents)
         self.observations = maybe_detach(self.observations)
@@ -62,14 +121,33 @@ class WSCRLDataset(Dataset):
     def __getitem__(self, idx):
         return self.observations[idx], self.latents[idx], self.intervention_ids[idx], self.interventions[idx]
 
+    def __eq__(self, other):
+        # Check for equality of probability tables
+        for (k1, v1), (k2, v2) in zip(
+            self.intervset.probability_tables.dict_of_tables.items(), 
+            other.intervset.probability_tables.dict_of_tables.items()
+        ):
+            if not (v1 == v2).all():
+                return False
+        # Check equality of alpha vec
+        if (self.intervset.probability_tables.alpha_vec != other.intervset.probability_tables.alpha_vec).all():
+            return False
+        # Check equality of adj matrix
+        if (self.intervset.adj_mat != other.intervset.adj_mat).all():
+            return False
+        return True
 
 class AutomaticDataset(WSCRLDataset):
-    def __init__(self, num_samples, timesteps, markov, G, timestep_carryover):
+    def __init__(self, num_samples, timesteps, markov, G, timestep_carryover, seed: int = None):
         try:
             nx.find_cycle(G)
             raise AssertionError("Graph can't have cycles")
         except NetworkXNoCycle:
             pass
+    
+        if seed is not None:
+            torch.manual_seed(seed)
+            np.random.seed(seed)
 
         n2i = node_to_index(G)
         starts = roots(G)
@@ -123,8 +201,25 @@ class AutomaticDataset(WSCRLDataset):
         super().__init__(num_samples, timesteps, G, links, unlinks, intervset, timestep_carryover)
 
 
-def n_node_dataset(num_datasets, num_nodes_OR_generator, num_samples, timesteps, markov):
+def n_node_dataset(
+    num_datasets, 
+    num_nodes_OR_generator, 
+    num_samples, 
+    timesteps, 
+    markov, 
+    seed: int = 42
+):
+    torch.manual_seed(seed)
+
     if isinstance(num_nodes_OR_generator, int):
+        if num_nodes_OR_generator == 2:
+            def gen_graph(_):
+                # Fixed 2 node graph
+                G = nx.DiGraph()
+                edges = [('A', 'B')]
+                G.add_edges_from(edges)
+                return G
+
         def has_cycle(g):
             try:
                 nx.find_cycle(g)
@@ -153,6 +248,60 @@ def n_node_dataset(num_datasets, num_nodes_OR_generator, num_samples, timesteps,
     return ret
 
 
+def build_train_test_n_node_dataset(
+    n_train, 
+    n_test,
+    num_nodes_OR_generator, 
+    timesteps, 
+    markov, 
+    seed: int = 42
+):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+
+    if isinstance(num_nodes_OR_generator, int):
+        def has_cycle(g):
+            try:
+                nx.find_cycle(g)
+                return True
+            except:
+                return False
+
+        def gen_graph(i):
+            def gen():
+                return nx.fast_gnp_random_graph(num_nodes_OR_generator, 0.7, directed=True)
+
+            g = gen()
+            while has_cycle(g):
+                g = gen()
+
+            return g
+
+        generator = gen_graph
+    else:
+        generator = num_nodes_OR_generator
+
+    graph = generator(0)  # ??
+    train = AutomaticDataset(n_train, timesteps, markov, graph, timestep_carryover=False, seed=seed)
+    test = AutomaticDataset(n_test, timesteps, markov, graph, timestep_carryover=False, seed=seed)
+    if train != test:
+        raise RuntimeError("train and test datasets have different prob tables or adj matricies")
+    return train, test
+
+
+def build_manual_graph(n_samples):
+    return WSCRLDataset(n_samples, **DEFAULT_GRAPH().dataset_kwargs())
+
+
+def build_default_train_test(n_train, n_test, seed: int = 42):
+    """Builds default markov length 2 dataset of dimension 3 using default manual graph config"""
+    if seed is not None:
+        torch.manual_seed(seed=seed)
+    train = build_manual_graph(n_train)
+    test = build_manual_graph(n_test)
+    return train, test
+
+
 def jank_main(
     data_file: str = "nd_toy_dataset.pt", 
     graph_file: str = "nd_toy_dataset_graph.pkl",
@@ -168,47 +317,7 @@ def jank_main(
     if auto:
         dataset = n_node_dataset(4, 3, num_samples=n_samples, timesteps=2, markov=2)[0]
     else:
-        # COMPUTE THE SET OF INTERVENTIONS: THE INTERVSET
-        x = IntervSet(G, 2)
-        print(x.set_of_all_intervs)
-
-        # GIVEN THE PRINTED STATEMENT ABOVE, YOU CAN DEFINE YOUR TABLES.
-        # (it's also easy to automate this using a forloop on the markov length)
-        dict_of_tables = {
-            0: np.ones(x.num_interv_ids),
-            1: np.random.uniform(0, 10, size=(x.num_interv_ids, x.num_interv_ids)),
-            2: np.random.uniform(0, 10, size=(x.num_interv_ids, x.num_interv_ids))
-        }
-        alpha_vec = np.random.uniform(0.1,1, size=(3,))
-        # fixme
-        # PASS THE TABLE AND ALPHAS TO THE INTERVSET CALCULATOR
-        switch_case = IntervTable(dict_of_tables, alpha_vec)
-
-        x.set_tables(switch_case)
-        x.kill(intervs_of_size=2, intervs_in_set={1:[3], 2: [1]})
-
-        temp = x.impossible_intervention_ids
-
-        # DEFINE THE RELATIONSHIP OF EACH NODE TO ITS PARENT
-        # (to automate this, just an affine transform given the parents)
-        links = {
-            'A': lambda parents: Normal(0.0, 1.0).sample(),
-            'B': lambda parents: Normal(0.3 * parents[0] ** 2 - 0.6 * parents[0], 0.16).sample(),
-            'C': lambda parents: Normal(0.2 * parents[0] ** 2 + -0.8 * parents[1], 1.0).sample()
-        }
-
-        # DEFINE HOW THE NODES BEHAVE WHEN THEY GET INTERVENED ON
-        # (to automate this, just sample from a normal or something of the sort)
-        unlinks = {
-            'A': lambda: links['A'](None),
-            'B': lambda: Normal(0.4, 1.0).sample(),
-            'C': lambda: Normal(-0.3, 1.0).sample()
-        }
-
-        dataset = WSCRLDataset(n_samples, 2, G, links, unlinks, intervset=x)
-
-    # To access a single sample
-    sample = dataset[0]
+        dataset = build_manual_graph(G, n_samples)
 
     def plot_3d(data):
         interventions = dataset.intervention_ids
