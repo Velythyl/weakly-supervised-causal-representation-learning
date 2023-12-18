@@ -116,7 +116,7 @@ class IntervTable:
         return ret
 
 class IntervSet:
-    def __init__(self, G, markov=0):
+    def __init__(self, G, markov=0, set_of_all_intervs=None):
         adj_mat = nx.adjacency_matrix(G)
         # Convert the adjacency matrix to a NumPy array (if needed)
         adj_mat = adj_mat.toarray()
@@ -125,7 +125,12 @@ class IntervSet:
         self.num_nodes = adj_mat.shape[0]
         self.adj_mat = adj_mat
 
-        self.set_of_all_intervs = list(sorted(list(powerset(list(range(self.num_nodes))))))
+        if set_of_all_intervs is None:
+            set_of_all_intervs = list(sorted(list(powerset(list(range(self.num_nodes))))))
+        else: 
+            raise NotImplementedError()
+
+        self.set_of_all_intervs = set_of_all_intervs
         self.interv_ids = np.arange(len(self.set_of_all_intervs))
         assert self.num_nodes == 1 + max(set([_a for sub in self.set_of_all_intervs for _a in sub]))
 
@@ -156,6 +161,15 @@ class IntervSet:
         return dead, always_dead
 
     def kill(self, intervs_of_size=None, intervs_in_set=None):
+        """docstring plssssssssssssssss
+
+        Args:
+            intervs_of_size (_type_, optional): _description_. Defaults to None.
+            intervs_in_set (_type_, optional): _description_. Defaults to None.
+
+        Returns:
+            _type_: _description_
+        """
         if intervs_of_size is not None:
             # then it must be
             # 1. a length

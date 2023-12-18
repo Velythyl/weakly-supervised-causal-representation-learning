@@ -21,8 +21,11 @@ from ws_crl_lite.datasets.intervset import IntervSet, IntervTable
 from ws_crl_minimal.encoder import FlowEncoder
 
 
-class DEFAULT_GRAPH:
-    def __init__(self):
+class NONATOMIC_MARKOV2:
+    def __init__(self, seed: int = None):
+        if seed is not None:
+            np.random.seed(seed)
+
         # FIRST, CREATE A GRAPH
         self.G = nx.DiGraph()
 
@@ -71,6 +74,73 @@ class DEFAULT_GRAPH:
             "unlinks": self.unlinks,
             "intervset": self.x
         }
+
+class ATOMIC_MARKOV1:
+    def __init__(self, seed: int = None):
+        if seed is not None:
+            np.random.seed(seed)
+
+        # FIRST, CREATE A GRAPH
+        self.G = nx.DiGraph()
+
+        # Add edges to the graph
+        self.edges = [('A', 'B'), ('B', 'C'), ('A', 'C')]
+        self.G.add_edges_from(self.edges)
+
+        self.x = IntervSet(self.G, markov=1)  #, set_of_all_intervs=[(), (0,), (1,), (2,)])
+
+        # GIVEN THE PRINTED STATEMENT ABOVE, YOU CAN DEFINE YOUR TABLES.
+        # (it's also easy to automate this using a forloop on the markov length)
+        # self.dict_of_tables = {
+        #     0: np.ones(self.x.num_interv_ids),
+        #     1: np.random.uniform(0, 10, size=(self.x.num_interv_ids, self.x.num_interv_ids)),
+        #     # 2: np.random.uniform(0, 10, size=(self.x.num_interv_ids, self.x.num_interv_ids))
+        # }
+
+        self.dict_of_tables = {
+            0: np.ones(self.x.num_interv_ids),  # no interventions on timestep 2
+            # 1: np.random.uniform(0, 10, size=(self.x.num_interv_ids, self.x.num_interv_ids)),  # maybe dirichlet
+            # 2: np.random.uniform(0, 10, size=(self.x.num_interv_ids, self.x.num_interv_ids))
+        }
+
+        self.alpha_vec = np.random.uniform(0.1,1, size=(2,))
+        # fiself.xme
+        # PASS THE TABLE AND ALPHAS TO THE INTERVSET CALCULATOR
+        self.switch_case = IntervTable(self.dict_of_tables, self.alpha_vec)
+
+        self.x.set_tables(self.switch_case)
+        self.x.kill(intervs_of_size=2)  #, intervs_in_set={1:[3], 2: [1]})
+        self.x.kill(intervs_of_size=3)  #, intervs_in_set={1:[3], 2: [1]})
+
+        # DEFINE THE RELATIONSHIP OF EACH NODE TO ITS PARENT
+        # (to automate this, just an affine transform given the parents)
+        self.links = {
+            'A': lambda parents: Normal(0.0, 1.0).sample(),
+            'B': lambda parents: Normal(0.3 * parents[0] ** 2 - 0.6 * parents[0], 0.16).sample(),
+            'C': lambda parents: Normal(0.2 * parents[0] ** 2 + -0.8 * parents[1], 1.0).sample()
+        }
+
+        # DEFINE HOW THE NODES BEHAVE WHEN THEY GET INTERVENED ON
+        # (to automate this, just sample from a normal or something of the sort)
+        self.unlinks = {
+            'A': lambda: self.links['A'](None),
+            'B': lambda: Normal(0.4, 1.0).sample(),
+            'C': lambda: Normal(-0.3, 1.0).sample()
+        }
+    
+    def dataset_kwargs(self):
+        return {
+            "timesteps": 2,
+            "G": self.G,
+            "links": self.links,
+            "unlinks": self.unlinks,
+            "intervset": self.x
+        }
+
+GRAPH_DEFS = {
+    "nonatomic_markov2": NONATOMIC_MARKOV2,
+    "atomic_markov1": ATOMIC_MARKOV1,
+}
 
 
 def maybe_detach(arr):
@@ -289,16 +359,18 @@ def build_train_test_n_node_dataset(
     return train, test
 
 
-def build_manual_graph(n_samples):
-    return WSCRLDataset(n_samples, **DEFAULT_GRAPH().dataset_kwargs())
+def build_manual_train_test(n_train, n_test, graph_def: str = "nonatomic_markov2", seed: int = 42):
+    """Builds graph using manual graph defs"""
 
+    if graph_def not in GRAPH_DEFS:
+        raise ValueError(f"graph_df is {graph_def}; must be one of {list(GRAPH_DEFS.keys())}")
 
-def build_default_train_test(n_train, n_test, seed: int = 42):
-    """Builds default markov length 2 dataset of dimension 3 using default manual graph config"""
     if seed is not None:
         torch.manual_seed(seed=seed)
-    train = build_manual_graph(n_train)
-    test = build_manual_graph(n_test)
+    graph_def = GRAPH_DEFS[graph_def](seed)
+
+    train = WSCRLDataset(n_train, **graph_def.dataset_kwargs())
+    test = WSCRLDataset(n_test, **graph_def.dataset_kwargs())
     return train, test
 
 
@@ -317,7 +389,8 @@ def jank_main(
     if auto:
         dataset = n_node_dataset(4, 3, num_samples=n_samples, timesteps=2, markov=2)[0]
     else:
-        dataset = build_manual_graph(G, n_samples)
+        raise NotImplementedError
+        # dataset = build(G, n_samples)
 
     def plot_3d(data):
         interventions = dataset.intervention_ids
