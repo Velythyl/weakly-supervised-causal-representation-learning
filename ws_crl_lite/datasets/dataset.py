@@ -98,13 +98,11 @@ class ATOMIC_MARKOV1:
         # }
 
         self.dict_of_tables = {
-            0: np.ones(self.x.num_interv_ids),  # no interventions on timestep 2
-            # 1: np.random.uniform(0, 10, size=(self.x.num_interv_ids, self.x.num_interv_ids)),  # maybe dirichlet
-            # 2: np.random.uniform(0, 10, size=(self.x.num_interv_ids, self.x.num_interv_ids))
+            0: np.ones(self.x.num_interv_ids), 
         }
 
         self.alpha_vec = np.random.uniform(0.1,1, size=(2,))
-        # fiself.xme
+
         # PASS THE TABLE AND ALPHAS TO THE INTERVSET CALCULATOR
         self.switch_case = IntervTable(self.dict_of_tables, self.alpha_vec)
 
