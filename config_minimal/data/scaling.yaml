@@ -5,7 +5,7 @@ dim_z: 2  # Tested with 2...30
 dim_x: ${data.dim_z}
 
 data_dir: '${general.base_dir}/data/${data.dataset}/${data.subset}'
-always_generate_new_data: true
+always_generate_new_data: false
 
 samples:
   train: 100000
