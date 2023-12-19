@@ -107,6 +107,12 @@ Run their experiment with our dataset:
 python experiments_minimal/scaling.py  general.exp_name=scaling_markov1_custom  data.dataset=scaling_custom  general.base_dir=results_scaling_markov1  general.seed=42  data.dim_z=3  data.nature.seed=42  training=scaling_fast
 ```
 
+Run 4D dataset to see if we can recover our graph
+
+```bash
+python experiments_minimal/scaling.py  general.exp_name=scaling_markov1_custom  data.dataset=scaling_custom  general.base_dir=results_scaling_markov1  general.seed=42  data.dim_z=4  data.nature.seed=42  training=scaling_fast
+```
+
 
 &nbsp;
 &nbsp;

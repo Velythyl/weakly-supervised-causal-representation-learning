@@ -24,10 +24,23 @@ from ws_crl_lite.datasets.intervset import IntervSet, IntervTable
 # from ws_crl_minimal.encoder import FlowEncoder
 
 
-class NONATOMIC_MARKOV2:
+class GraphObjBase:
     def __init__(self, seed: int = None):
         if seed is not None:
             np.random.seed(seed)
+    
+    def dataset_kwargs(self):
+        return {
+            "timesteps": 2,
+            "G": self.G,
+            "links": self.links,
+            "unlinks": self.unlinks,
+            "intervset": self.x
+        }
+
+class NONATOMIC_MARKOV2(GraphObjBase):
+    def __init__(self, seed: int = None):
+        super().__init__(seed)
 
         # FIRST, CREATE A GRAPH
         self.G = nx.DiGraph()
@@ -68,20 +81,11 @@ class NONATOMIC_MARKOV2:
             'B': lambda: Normal(0.4, 1.0).sample(),
             'C': lambda: Normal(-0.3, 1.0).sample()
         }
-    
-    def dataset_kwargs(self):
-        return {
-            "timesteps": 2,
-            "G": self.G,
-            "links": self.links,
-            "unlinks": self.unlinks,
-            "intervset": self.x
-        }
 
-class ATOMIC_MARKOV1:
+
+class ATOMIC_MARKOV1(GraphObjBase):
     def __init__(self, seed: int = None):
-        if seed is not None:
-            np.random.seed(seed)
+        super().__init__(seed)
 
         # FIRST, CREATE A GRAPH
         self.G = nx.DiGraph()
@@ -128,19 +132,66 @@ class ATOMIC_MARKOV1:
             'B': lambda: Normal(0.4, 1.0).sample(),
             'C': lambda: Normal(-0.3, 1.0).sample()
         }
+
     
-    def dataset_kwargs(self):
-        return {
-            "timesteps": 1,
-            "G": self.G,
-            "links": self.links,
-            "unlinks": self.unlinks,
-            "intervset": self.x
+class ATOMIC_4D_MARKOV1(GraphObjBase):
+    def __init__(self, seed: int = None):
+        super().__init__(seed)
+
+        # FIRST, CREATE A GRAPH
+        self.G = nx.DiGraph()
+
+        # Add edges to the graph
+        self.edges = [('A', 'B'), ('B', 'C'), ('A', 'C'), ('B', 'D')]
+        self.G.add_edges_from(self.edges)
+
+        self.x = IntervSet(self.G, markov=1)  #, set_of_all_intervs=[(), (0,), (1,), (2,)])
+
+        # GIVEN THE PRINTED STATEMENT ABOVE, YOU CAN DEFINE YOUR TABLES.
+        # (it's also easy to automate this using a forloop on the markov length)
+        # self.dict_of_tables = {
+        #     0: np.ones(self.x.num_interv_ids),
+        #     1: np.random.uniform(0, 10, size=(self.x.num_interv_ids, self.x.num_interv_ids)),
+        #     2: np.random.uniform(0, 10, size=(self.x.num_interv_ids, self.x.num_interv_ids))
+        # }
+
+        self.dict_of_tables = {
+            0: np.ones(self.x.num_interv_ids), 
         }
+
+        self.alpha_vec = np.random.uniform(0.1,1, size=(2,))
+
+        # PASS THE TABLE AND ALPHAS TO THE INTERVSET CALCULATOR
+        self.switch_case = IntervTable(self.dict_of_tables, self.alpha_vec)
+
+        self.x.set_tables(self.switch_case)
+        self.x.kill(intervs_of_size=2)
+        self.x.kill(intervs_of_size=3)
+        self.x.kill(intervs_of_size=4) 
+
+        # DEFINE THE RELATIONSHIP OF EACH NODE TO ITS PARENT
+        # (to automate this, just an affine transform given the parents)
+        self.links = {
+            'A': lambda parents: Normal(0.0, 1.0).sample(),
+            'B': lambda parents: Normal(0.3 * parents[0], 0.16).sample(),
+            'C': lambda parents: Normal(0.2 * parents[0], 0.2).sample(),
+            'D': lambda parents: Normal(- 0.3 * parents[0], 0.4).sample(),
+        }
+
+        # DEFINE HOW THE NODES BEHAVE WHEN THEY GET INTERVENED ON
+        # (to automate this, just sample from a normal or something of the sort)
+        self.unlinks = {
+            'A': lambda: self.links['A'](None),
+            'B': lambda: Normal(0.4, 0.2).sample(),
+            'C': lambda: Normal(0.1, 0.4).sample(),
+            'D': lambda: Normal(-0.3, 0.3).sample()
+        }
+    
 
 GRAPH_DEFS = {
     "nonatomic_markov2": NONATOMIC_MARKOV2,
     "atomic_markov1": ATOMIC_MARKOV1,
+    "atomic_4d_markov1": ATOMIC_4D_MARKOV1
 }
 
 
@@ -356,21 +407,22 @@ def build_train_test_n_node_dataset(
     return train, test
 
 
-def build_manual_datasets(n_samples, graph_def: str = "nonatomic_markov2", seed: int = 42):
+def build_manual_datasets(n_samples, graph_def: str = "nonatomic_markov2", graph_def_obj = None, seed: int = 42):
     """Builds graph using manual graph defs
     If n_samples is a list, make a dataset for every one of the specified lengths
     """
 
-    if graph_def not in GRAPH_DEFS:
-        raise ValueError(f"graph_df is {graph_def}; must be one of {list(GRAPH_DEFS.keys())}")
+    if graph_def_obj is not None:
+        if graph_def not in GRAPH_DEFS:
+            raise ValueError(f"graph_df is {graph_def}; must be one of {list(GRAPH_DEFS.keys())}")
+        graph_def_obj = GRAPH_DEFS[graph_def](seed)
 
     if seed is not None:
         torch.manual_seed(seed=seed)
-    graph_def = GRAPH_DEFS[graph_def](seed)
 
     if not isinstance(n_samples, list):
         n_samples = [n_samples]
-    datasets = [WSCRLDataset(n, **graph_def.dataset_kwargs()) for n in n_samples]
+    datasets = [WSCRLDataset(n, **graph_def_obj.dataset_kwargs()) for n in n_samples]
     return datasets
 
 

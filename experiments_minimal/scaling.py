@@ -10,6 +10,9 @@ from pathlib import Path
 import mlflow
 import pandas as pd
 from collections import defaultdict
+import networkx as nx 
+import io
+import matplotlib.pyplot as plt
 
 from ws_crl_minimal.encoder import SONEncoder, GaussianEncoder
 from ws_crl_minimal.lcm import FlowLCM
@@ -49,6 +52,16 @@ from experiments_minimal.experiment_utils import (
     determine_graph_learning_settings,
     frequency_check,
 )
+
+def graph2img(G):
+    fig, ax = plt.subplots()
+    nx.draw(G, ax=ax)
+    plt.close(fig)
+    img_buf = io.BytesIO()
+    fig.savefig(img_buf, format='png')
+    img_buf.seek(0)
+    image = plt.imread(img_buf)
+    return image[:, :, :3]
 
 
 @hydra.main(config_path="../config_minimal", config_name="scaling_ilcm")
@@ -631,6 +644,13 @@ def eval_enco_graph(cfg, model, partition="train"):
         .detach()
     )
     logger.info(f"ENCO adjacency matrix: {adjacency_matrix}")
+
+    G = nx.DiGraph()
+    for i in range(len(adjacency_matrix)): 
+        for j in range(len(adjacency_matrix)): 
+            if adjacency_matrix[i][j] == 1: 
+                G.add_edge(i,j) 
+    mlflow.log_image(graph2img(G), "inferred_graph.png")
 
     # Package as dict
     results = {
