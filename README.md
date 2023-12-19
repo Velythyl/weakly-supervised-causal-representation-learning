@@ -89,6 +89,25 @@ ssh -t -t mila -L 8080:localhost:8080 ssh <USER>@cn-g007 -L 8080:localhost:8080
 
 and then open on your home machine: http://localhost:8080.
 
+# Experiments
+
+## Compare their dataset vs our dataset
+
+Generate the dataset using [notebooks/create_datasets.ipynb](notebooks/create_datasets.ipynb)
+
+Run their experiment:
+
+```bash
+python experiments_minimal/scaling.py  general.exp_name=scaling_markov1  data.dataset=scaling  general.base_dir=results_scaling_markov1  general.seed=42  data.dim_z=3  data.nature.seed=42  training=scaling_fast
+```
+
+Run their experiment with our dataset:
+
+```bash
+python experiments_minimal/scaling.py  general.exp_name=scaling_markov1_custom  data.dataset=scaling_custom  general.base_dir=results_scaling_markov1  general.seed=42  data.dim_z=3  data.nature.seed=42  training=scaling_fast
+```
+
+
 &nbsp;
 &nbsp;
 &nbsp;

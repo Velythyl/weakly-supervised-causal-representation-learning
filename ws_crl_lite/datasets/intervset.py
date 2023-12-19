@@ -176,7 +176,8 @@ class IntervSet:
             # 2. a dict: (m) -> (length)
 
             if isinstance(intervs_of_size, int):
-                intervs_of_size = {i: intervs_of_size for i in range(self.markov + 1)}
+                intervs_of_size = {i: intervs_of_size for i in range(self.markov)}
+                # intervs_of_size = {i: intervs_of_size for i in range(self.markov + 1)}
 
             ret = {}
             for m, size in intervs_of_size.items():

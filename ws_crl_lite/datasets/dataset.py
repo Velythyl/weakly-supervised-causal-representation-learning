@@ -94,7 +94,7 @@ class ATOMIC_MARKOV1:
         # self.dict_of_tables = {
         #     0: np.ones(self.x.num_interv_ids),
         #     1: np.random.uniform(0, 10, size=(self.x.num_interv_ids, self.x.num_interv_ids)),
-        #     # 2: np.random.uniform(0, 10, size=(self.x.num_interv_ids, self.x.num_interv_ids))
+        #     2: np.random.uniform(0, 10, size=(self.x.num_interv_ids, self.x.num_interv_ids))
         # }
 
         self.dict_of_tables = {
@@ -128,7 +128,7 @@ class ATOMIC_MARKOV1:
     
     def dataset_kwargs(self):
         return {
-            "timesteps": 2,
+            "timesteps": 1,
             "G": self.G,
             "links": self.links,
             "unlinks": self.unlinks,
@@ -357,8 +357,10 @@ def build_train_test_n_node_dataset(
     return train, test
 
 
-def build_manual_train_test(n_train, n_test, graph_def: str = "nonatomic_markov2", seed: int = 42):
-    """Builds graph using manual graph defs"""
+def build_manual_datasets(n_samples, graph_def: str = "nonatomic_markov2", seed: int = 42):
+    """Builds graph using manual graph defs
+    If n_samples is a list, make a dataset for every one of the specified lengths
+    """
 
     if graph_def not in GRAPH_DEFS:
         raise ValueError(f"graph_df is {graph_def}; must be one of {list(GRAPH_DEFS.keys())}")
@@ -367,9 +369,10 @@ def build_manual_train_test(n_train, n_test, graph_def: str = "nonatomic_markov2
         torch.manual_seed(seed=seed)
     graph_def = GRAPH_DEFS[graph_def](seed)
 
-    train = WSCRLDataset(n_train, **graph_def.dataset_kwargs())
-    test = WSCRLDataset(n_test, **graph_def.dataset_kwargs())
-    return train, test
+    if not isinstance(n_samples, list):
+        n_samples = [n_samples]
+    datasets = [WSCRLDataset(n, **graph_def.dataset_kwargs()) for n in n_samples]
+    return datasets
 
 
 def jank_main(
