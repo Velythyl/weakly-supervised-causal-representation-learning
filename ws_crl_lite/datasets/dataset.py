@@ -1,6 +1,5 @@
 import dataclasses
 import numpy as np
-import fire
 import pickle
 
 import networkx as nx
@@ -18,6 +17,7 @@ from matplotlib.colors import Normalize
 from ws_crl_lite.datasets.generate_for_graph import generate, node_to_index, roots
 from ws_crl_lite.datasets.intervset import IntervSet, IntervTable
 from ws_crl_minimal.encoder import FlowEncoder
+from ws_crl_minimal.transforms import make_scalar_transform
 
 
 def maybe_detach(arr):
@@ -84,11 +84,12 @@ class AutomaticDataset(WSCRLDataset):
             n_parents = len(list(G.predecessors(node)))
 
             def make_link():
-                flow_encoder = FlowEncoder(
-                    input_features=n_parents,
-                    output_features=n_parents,
-                    transform_blocks=2  # todo maybe add blocks
-                )
+                #flow_encoder = FlowEncoder(
+                #    input_features=n_parents,
+                #    output_features=n_parents,
+                #    transform_blocks=2  # todo maybe add blocks
+                #)
+                flow_encoder = make_scalar_transform(n_parents, layers=3)
 
                 def descendant_link(parents):
                     flow = flow_encoder(parents[None])[0]
