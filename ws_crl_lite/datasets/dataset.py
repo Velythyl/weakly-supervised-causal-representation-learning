@@ -178,9 +178,12 @@ if __name__ == "__main__":
         switch_case = IntervTable(dict_of_tables, alpha_vec)
 
         x.set_tables(switch_case)
-        x.kill(intervs_of_size=2, intervs_in_set={1:[3], 2: [1]})
-        x.kill(nodes_in_intervs=[(1,2)])
+        x.kill(intervs_of_size=2)
+        x.kill(intervs_of_size=3)
         temp = x.impossible_intervention_ids
+
+
+
 
         # DEFINE THE RELATIONSHIP OF EACH NODE TO ITS PARENT
         # (to automate this, just an affine transform given the parents)
@@ -199,6 +202,8 @@ if __name__ == "__main__":
         }
 
         dataset = WSCRLDataset(1000, 2, G, links, unlinks, intervset=x)
+
+        a = dataset.intervention_ids.unique()
 
     # To access a single sample
     sample = dataset[0]
