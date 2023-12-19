@@ -229,9 +229,9 @@ class ATOMIC_4D_MARKOV1_2(GraphObjBase):
         # DEFINE THE RELATIONSHIP OF EACH NODE TO ITS PARENT
         # (to automate this, just an affine transform given the parents)
         self.links = {
-            'A': lambda parents: Normal(0.0, 0.1).sample(),
-            'B': lambda parents: Normal(0.3 * parents[0] ** 2 + parents[0], 0.16).sample(),
-            'C': lambda parents: Normal(-0.3 * parents[0] ** 2 - 2 * parents[1], 0.4).sample(),
+            'A': lambda parents: Normal(0.2, 0.1).sample(),
+            'B': lambda parents: Normal(0.3 * parents[0] * 2 + parents[0], 0.16).sample(),
+            'C': lambda parents: Normal(-0.3 * parents[0] * 2 - 2 * parents[1], 0.4).sample(),
             'D': lambda parents: Normal(5 * parents[0], 0.2).sample(),
         }
 
