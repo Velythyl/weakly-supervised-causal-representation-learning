@@ -247,7 +247,7 @@ class ATOMIC_4D_MARKOV1_2(GraphObjBase):
 GRAPH_DEFS = {
     "nonatomic_markov2": NONATOMIC_MARKOV2,
     "atomic_markov1": ATOMIC_MARKOV1,
-    "atomic_4d_markov1": ATOMIC_4D_MARKOV1
+    "atomic_4d_markov1": ATOMIC_4D_MARKOV1,
     "atomic_4d_markov1_2": ATOMIC_4D_MARKOV1_2
 }
 
