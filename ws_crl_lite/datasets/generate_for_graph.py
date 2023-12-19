@@ -133,7 +133,7 @@ def generate(num_samples, timesteps, G, links, unlinks, intervset, timestep_carr
     num_nodes = len(G.nodes())
 
 
-    flow_encoder = make_scalar_transform(num_nodes)
+    flow_encoder = make_scalar_transform(num_nodes, layers=5)
     #flow_encoder = FlowEncoder(
     #    input_features=num_nodes,
     #    output_features=num_nodes,
