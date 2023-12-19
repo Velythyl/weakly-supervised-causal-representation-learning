@@ -189,12 +189,66 @@ class ATOMIC_4D_MARKOV1(GraphObjBase):
             'C': lambda: Normal(0.1, 0.4).sample(),
             'D': lambda: Normal(-0.3, 0.3).sample()
         }
-    
+
+class ATOMIC_4D_MARKOV1_2(GraphObjBase):
+    def __init__(self, seed: int = None):
+        super().__init__(seed)
+
+        # FIRST, CREATE A GRAPH
+        self.timesteps = 1
+        self.G = nx.DiGraph()
+
+        # Add edges to the graph
+        self.edges = [('A', 'B'), ('B', 'C'), ('A', 'C'), ('B', 'D')]
+        self.G.add_edges_from(self.edges)
+
+        self.x = IntervSet(self.G, markov=1)  #, set_of_all_intervs=[(), (0,), (1,), (2,)])
+
+        # GIVEN THE PRINTED STATEMENT ABOVE, YOU CAN DEFINE YOUR TABLES.
+        # (it's also easy to automate this using a forloop on the markov length)
+        # self.dict_of_tables = {
+        #     0: np.ones(self.x.num_interv_ids),
+        #     1: np.random.uniform(0, 10, size=(self.x.num_interv_ids, self.x.num_interv_ids)),
+        #     2: np.random.uniform(0, 10, size=(self.x.num_interv_ids, self.x.num_interv_ids))
+        # }
+
+        self.dict_of_tables = {
+            0: np.ones(self.x.num_interv_ids),
+        }
+
+        self.alpha_vec = np.random.uniform(0.1,1, size=(2,))
+
+        # PASS THE TABLE AND ALPHAS TO THE INTERVSET CALCULATOR
+        self.switch_case = IntervTable(self.dict_of_tables, self.alpha_vec)
+
+        self.x.set_tables(self.switch_case)
+        self.x.kill(intervs_of_size=2)
+        self.x.kill(intervs_of_size=3)
+        self.x.kill(intervs_of_size=4)
+
+        # DEFINE THE RELATIONSHIP OF EACH NODE TO ITS PARENT
+        # (to automate this, just an affine transform given the parents)
+        self.links = {
+            'A': lambda parents: Normal(0.0, 0.1).sample(),
+            'B': lambda parents: Normal(0.3 * parents[0] ** 2 + parents[0], 0.16).sample(),
+            'C': lambda parents: Normal(-0.3 * parents[0] ** 2 - 2 * parents[1], 0.4).sample(),
+            'D': lambda parents: Normal(5 * parents[0], 0.2).sample(),
+        }
+
+        # DEFINE HOW THE NODES BEHAVE WHEN THEY GET INTERVENED ON
+        # (to automate this, just sample from a normal or something of the sort)
+        self.unlinks = {
+            'A': lambda: self.links['A'](None),
+            'B': lambda: Normal(-0.3, 0.2).sample(),
+            'C': lambda: Normal(0.3, 0.3).sample(),
+            'D': lambda: Normal(-1.0, 0.5).sample(),
+        }
 
 GRAPH_DEFS = {
     "nonatomic_markov2": NONATOMIC_MARKOV2,
     "atomic_markov1": ATOMIC_MARKOV1,
     "atomic_4d_markov1": ATOMIC_4D_MARKOV1
+    "atomic_4d_markov1_2": ATOMIC_4D_MARKOV1_2
 }
 
 
