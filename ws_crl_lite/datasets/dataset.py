@@ -1,13 +1,19 @@
 import dataclasses
-import random
-import struct
 import numpy as np
+import fire
+import pickle
 
 import networkx as nx
 import torch
 from networkx import NetworkXNoCycle
 from torch.distributions import Normal
 from torch.utils.data import Dataset
+
+import matplotlib
+# matplotlib.use('TkAgg')
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+from matplotlib.colors import Normalize
 
 from ws_crl_lite.datasets.generate_for_graph import generate, node_to_index, roots
 from ws_crl_lite.datasets.intervset import IntervSet, IntervTable
@@ -30,6 +36,7 @@ class WSCRLDataset(Dataset):
     def __init__(self, num_samples, timesteps, G, links, unlinks, intervset, timestep_carryover=True):
         self.num_samples = num_samples
         self.intervset = intervset
+        self.G = G
 
         self.latents, self.observations, self.interventions, self.intervention_ids = generate(num_samples, timesteps, G,
                                                                                               links, unlinks, intervset,
@@ -146,24 +153,24 @@ def n_node_dataset(num_datasets, num_nodes_OR_generator, num_samples, timesteps,
     return ret
 
 
-if __name__ == "__main__":
-    import networkx as nx
-
+def jank_main(
+    data_file: str = "nd_toy_dataset.pt", 
+    graph_file: str = "nd_toy_dataset_graph.pkl",
+    n_samples: int = 10000,   
+    auto: bool = True,
+):
     # FIRST, CREATE A GRAPH
     G = nx.DiGraph()
     # Add edges to the graph
     edges = [('A', 'B'), ('B', 'C'), ('A', 'C')]
     G.add_edges_from(edges)
 
-    AUTO = False
-    if AUTO:
-        dataset = n_node_dataset(1, 3, num_samples=50, timesteps=2, markov=2)[0]  # AutomaticDataset(1000, 6, 2, G)
+    if auto:
+        dataset = n_node_dataset(4, 3, num_samples=n_samples, timesteps=2, markov=2)[0]
     else:
         # COMPUTE THE SET OF INTERVENTIONS: THE INTERVSET
         x = IntervSet(G, 2)
         print(x.set_of_all_intervs)
-
-        import numpy as np
 
         # GIVEN THE PRINTED STATEMENT ABOVE, YOU CAN DEFINE YOUR TABLES.
         # (it's also easy to automate this using a forloop on the markov length)
@@ -189,7 +196,7 @@ if __name__ == "__main__":
         # (to automate this, just an affine transform given the parents)
         links = {
             'A': lambda parents: Normal(0.0, 1.0).sample(),
-            'B': lambda parents: Normal(0.3 * parents[0] ** 2 - 0.6 * parents[0], 0.8 ** 2).sample(),
+            'B': lambda parents: Normal(0.3 * parents[0] ** 2 - 0.6 * parents[0], 0.16).sample(),
             'C': lambda parents: Normal(0.2 * parents[0] ** 2 + -0.8 * parents[1], 1.0).sample()
         }
 
@@ -201,24 +208,17 @@ if __name__ == "__main__":
             'C': lambda: Normal(-0.3, 1.0).sample()
         }
 
-        dataset = WSCRLDataset(1000, 2, G, links, unlinks, intervset=x)
+        dataset = WSCRLDataset(n_samples, 2, G, links, unlinks, intervset=x)
 
         a = dataset.intervention_ids.unique()
 
     # To access a single sample
     sample = dataset[0]
-    import matplotlib
-
-    matplotlib.use('TkAgg')
-    import matplotlib.pyplot as plt
-
 
     def plot_3d(data):
         interventions = dataset.intervention_ids
         min_interv = interventions[interventions != 0].min()
         max_interv = interventions[interventions != 0].max()
-        import matplotlib.cm as cm
-        from matplotlib.colors import Normalize
 
         cmap = cm.viridis
         norm = Normalize(vmin=min_interv, vmax=max_interv)
@@ -273,10 +273,19 @@ if __name__ == "__main__":
         if dataset.markov == 2:
             plot_intervs(data[:, 1:, :], dataset.intervention_ids[:, 1].squeeze())
         plt.show()
-
+    
+    data = dataset[:]
+    intervention_labels = np.packbits(data[3], bitorder='big', axis=2) >> (8 - data[3].shape[2])
+    torch.save((*data[:2], data[3], intervention_labels.squeeze()), data_file)
+    with open(graph_file, "wb") as f:
+        pickle.dump(dataset.G, f)
 
     plot_3d(dataset.latents)
     plot_3d(dataset.observations)
     # do_plot(dataset.latents, dataset.intervention_ids.squeeze(), "black")
     # do_plot(dataset.observations, dataset.intervention_ids)
     exit()
+
+
+if __name__ == "__main__":
+    fire.Fire(jank_main)

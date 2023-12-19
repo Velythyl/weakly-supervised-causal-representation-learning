@@ -96,7 +96,7 @@ def generate_one(interventions, G, links, unlinks, timestep_carryover):
     for node in execution_order(G):
         parents = parents_dict(G)[node]
         if len(parents) >= 0:
-            parent_data = vec[parents]
+            parent_data = vec[parents.long()]
         else:
             parent_data = None
         vec[node] = sample_node(node, parent_data)
@@ -121,7 +121,7 @@ def generate_one(interventions, G, links, unlinks, timestep_carryover):
             if node in set_of_intervened_nodes:
                 val = sample_node_interv(node)
             else:
-                val = sample_node(node, data[-1][parents_dict(G)[node]])
+                val = sample_node(node, data[-1][parents_dict(G)[node].long()])
 
             data[m][node] = val
     return data
