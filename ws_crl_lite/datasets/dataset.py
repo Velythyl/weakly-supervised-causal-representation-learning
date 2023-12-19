@@ -31,7 +31,7 @@ class GraphObjBase:
     
     def dataset_kwargs(self):
         return {
-            "timesteps": 2,
+            "timesteps": self.timesteps,
             "G": self.G,
             "links": self.links,
             "unlinks": self.unlinks,
@@ -43,6 +43,7 @@ class NONATOMIC_MARKOV2(GraphObjBase):
         super().__init__(seed)
 
         # FIRST, CREATE A GRAPH
+        self.timesteps = 2
         self.G = nx.DiGraph()
 
         # Add edges to the graph
@@ -88,6 +89,7 @@ class ATOMIC_MARKOV1(GraphObjBase):
         super().__init__(seed)
 
         # FIRST, CREATE A GRAPH
+        self.timesteps = 1
         self.G = nx.DiGraph()
 
         # Add edges to the graph
@@ -139,6 +141,7 @@ class ATOMIC_4D_MARKOV1(GraphObjBase):
         super().__init__(seed)
 
         # FIRST, CREATE A GRAPH
+        self.timesteps = 1
         self.G = nx.DiGraph()
 
         # Add edges to the graph
@@ -412,7 +415,7 @@ def build_manual_datasets(n_samples, graph_def: str = "nonatomic_markov2", graph
     If n_samples is a list, make a dataset for every one of the specified lengths
     """
 
-    if graph_def_obj is not None:
+    if graph_def_obj is None:
         if graph_def not in GRAPH_DEFS:
             raise ValueError(f"graph_df is {graph_def}; must be one of {list(GRAPH_DEFS.keys())}")
         graph_def_obj = GRAPH_DEFS[graph_def](seed)

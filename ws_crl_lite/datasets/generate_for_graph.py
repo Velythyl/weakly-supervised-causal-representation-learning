@@ -132,7 +132,7 @@ def generate(num_samples, timesteps, G, links, unlinks, intervset, timestep_carr
     unlinks = {node_to_index(G)[k]: v for k, v in unlinks.items()}
     num_nodes = len(G.nodes())
 
-    flow_encoder = make_scalar_transform(num_nodes, layers=3)
+    # flow_encoder = make_scalar_transform(num_nodes, layers=3)
     # flow_encoder = FlowEncoder(
     #     input_features=num_nodes,
     #     output_features=num_nodes,
@@ -153,7 +153,8 @@ def generate(num_samples, timesteps, G, links, unlinks, intervset, timestep_carr
     for i in tqdm(range(num_samples)):
         lat = generate_one(intervention_tuples[i], G, links, unlinks, timestep_carryover)
         lat = torch.stack(lat)
-        observations.append(flow_encoder(lat)[0])
+        observations.append(lat)
+        # observations.append(flow_encoder(lat)[0])
         latents.append(lat)
 
     latents = torch.stack(latents)

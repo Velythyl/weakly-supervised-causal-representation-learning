@@ -101,7 +101,7 @@ class IntervTable:
             current_alpha = self.alpha_vec[i]
             for l in range(BATCH_SIZE):
                 past_node = history[l,i]
-                weights_for_past.append(self.dict_of_tables[i+1][past_node] * current_alpha)
+                weights_for_past.append(self.dict_of_tables[i+1][past_node] * current_alpha)  # TODO: idk why this is breaking. i+1 should not be more than 0?
             weights_for_past = np.vstack(weights_for_past)
             final_weights += weights_for_past
 
